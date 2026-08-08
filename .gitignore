@@ -1,0 +1,22 @@
+# Local credentials and machine-specific environment settings
+.env.*
+!.env.example
+
+# qBittorrent runtime state (includes credentials, session data, and logs)
+config/
+
+# Locally installed search plugins (downloads live under ~/Downloads/qbittorrent-downloads)
+plugins/
+
+# Leftover project-local downloads folder from older setups
+downloads/
+
+# Local backups and macOS metadata
+*.backup
+.DS_Store
+
+# Personal planning notes (not part of the shipped project)
+roadmap.txt
+
+# Editor / agent local config
+.cursor/
