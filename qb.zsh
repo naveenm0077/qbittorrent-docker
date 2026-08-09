@@ -9,7 +9,7 @@ QB_DOWNLOADS="$QB_DOWNLOADS_DEFAULT"
 QB_APP="$HOME/Applications/qBittorrent.app"
 QB_URL="http://localhost:8080"
 QB_API_KEY_FILE="$QB_DIR/.env.qbittorrent"
-QB_IMAGE_STALE_DAYS=60
+QB_IMAGE_STALE_DAYS=90
 QB_QUIT_LOCK="/tmp/qb-quit.lock"
 QB_STYLE_DEFAULT="color"
 typeset -g QB_STYLE="$QB_STYLE_DEFAULT"
@@ -767,15 +767,26 @@ PY
 }
 
 # Soft notice only — never pulls or recreates.
-# Shown only when the image is at least QB_IMAGE_STALE_DAYS old.
+# Age gate first (no network). If stale, digest-check; hint only when newer exists.
+# Same digests or failed check → stay quiet.
 _qb_image_age_notice() {
     local days
+    local image
+    local local_digest
+    local remote_digest
 
     days="$(_qb_image_age_days)" || return 0
+    (( days >= QB_IMAGE_STALE_DAYS )) || return 0
 
-    if (( days >= QB_IMAGE_STALE_DAYS )); then
-        _qb_line info "Image is $days days old. Consider: qb update"
+    image="$(_qb_service_image)" || return 0
+    local_digest="$(_qb_local_repo_digest "$image")" || return 0
+    remote_digest="$(_qb_remote_index_digest "$image")" || return 0
+
+    if _qb_digests_equal "$local_digest" "$remote_digest"; then
+        return 0
     fi
+
+    _qb_line info "Image is $days days old; newer available. Run: qb update"
 }
 
 _qb_app_running() {

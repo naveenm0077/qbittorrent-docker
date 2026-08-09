@@ -115,7 +115,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 
 | Command | Description |
 | --- | --- |
-| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App (idempotent; never a Safari tab). Remounts if `QB_DOWNLOADS` changed. If the local image is 60+ days old, prints a one-line suggestion to run `qb update` (does not auto-update). |
+| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App (idempotent; never a Safari tab). Remounts if `QB_DOWNLOADS` changed. If the local image is 90+ days old **and** a newer registry digest exists, prints a one-line suggestion to run `qb update` (does not auto-update; no nag when already latest or offline). |
 | `qb quit` | Close the WebUI app and stop qBittorrent. Docker Desktop stops only when no other containers are running. |
 | `qb restart` | Restart qBittorrent and wait for the WebUI. |
 | `qb status` | Show Docker, container, WebUI, and other-container status. |
