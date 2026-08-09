@@ -74,7 +74,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 
 | Command | Description |
 | --- | --- |
-| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App (idempotent; never a Safari tab). |
+| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App (idempotent; never a Safari tab). If the local image is 60+ days old, prints a one-line suggestion to run `qb update` (does not auto-update). |
 | `qb quit` | Close the WebUI app and stop qBittorrent. Docker Desktop stops only when no other containers are running. |
 | `qb restart` | Restart qBittorrent and wait for the WebUI. |
 | `qb status` | Show Docker, container, WebUI, and other-container status. |
@@ -83,7 +83,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 | `qb shell` | Open a shell in the qBittorrent container. |
 | `qb info` | Show image, container, mount, and port details. |
 | `qb version` | Show the running qBittorrent version. |
-| `qb update` | Pull the latest image when no downloads are active; recreate only if the image changed; remove the previous image afterward when safe. |
+| `qb update` | Check registry digests first (no layer download); pull/recreate only when newer. If the check fails, falls back to pull-then-compare. Blocks while downloads are active; removes the previous image when safe. Run occasionally (for example monthly); `qb start` never auto-updates. |
 | `qb images` | List local qBittorrent images (including dangling) with sizes and a unique total. |
 | `qb prune` | Remove unused local qBittorrent images; always keeps the image currently used by the container/compose service. |
 | `qb repair` | Recreate the qBittorrent container without touching downloads or configuration. |

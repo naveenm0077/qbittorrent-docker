@@ -8,6 +8,7 @@ QB_DOWNLOADS="$HOME/Downloads/qbittorrent-downloads"
 QB_APP="$HOME/Applications/qBittorrent.app"
 QB_URL="http://localhost:8080"
 QB_API_KEY_FILE="$QB_DIR/.env.qbittorrent"
+QB_IMAGE_STALE_DAYS=60
 
 typeset -g QB_SPINNER_PID=""
 
@@ -187,6 +188,47 @@ _qb_image_id() {
     docker image inspect "$image" --format '{{.Id}}' 2>/dev/null
 }
 
+_qb_local_repo_digest() {
+    local image="$1"
+    local digest
+
+    [[ -n "$image" ]] || return 1
+
+    digest="$(
+        docker image inspect "$image" \
+            --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+            2>/dev/null |
+            head -n 1
+    )"
+    [[ -n "$digest" ]] || return 1
+
+    # lscr.io/...@sha256:abcd → sha256:abcd
+    printf '%s\n' "${digest##*@}"
+}
+
+# Registry index digest for :tag (no layer download). Matches Docker Desktop RepoDigests.
+_qb_remote_index_digest() {
+    local image="$1"
+    local digest
+
+    [[ -n "$image" ]] || return 1
+
+    digest="$(
+        docker buildx imagetools inspect "$image" 2>/dev/null |
+            awk '/^Digest:/{ print $2; exit }'
+    )"
+    [[ "$digest" == sha256:* ]] || return 1
+
+    printf '%s\n' "$digest"
+}
+
+_qb_digests_equal() {
+    local left="${1#sha256:}"
+    local right="${2#sha256:}"
+
+    [[ -n "$left" && -n "$right" && "$left" == "$right" ]]
+}
+
 _qb_image_ids_equal() {
     local left="${1#sha256:}"
     local right="${2#sha256:}"
@@ -227,6 +269,52 @@ _qb_kept_image_id() {
     cd "$QB_DIR" 2>/dev/null || return 1
     image="$(_qb_service_image)" || return 1
     _qb_image_id "$image"
+}
+
+_qb_image_age_days() {
+    local image_id
+    local created
+
+    image_id="$(_qb_kept_image_id)" || return 1
+    created="$(
+        docker image inspect "$image_id" --format '{{.Created}}' 2>/dev/null
+    )" || return 1
+    [[ -n "$created" ]] || return 1
+
+    python3 - "$created" <<'PY'
+import re
+import sys
+from datetime import datetime, timezone
+
+raw = sys.argv[1].strip()
+if raw.endswith("Z"):
+    raw = raw[:-1] + "+00:00"
+
+raw = re.sub(r"\.(\d{6})\d*", r".\1", raw)
+
+try:
+    created = datetime.fromisoformat(raw)
+except ValueError:
+    sys.exit(1)
+
+if created.tzinfo is None:
+    created = created.replace(tzinfo=timezone.utc)
+
+age = (datetime.now(timezone.utc) - created.astimezone(timezone.utc)).days
+print(max(age, 0))
+PY
+}
+
+# Soft notice only — never pulls or recreates.
+# Shown only when the image is at least QB_IMAGE_STALE_DAYS old.
+_qb_image_age_notice() {
+    local days
+
+    days="$(_qb_image_age_days)" || return 0
+
+    if (( days >= QB_IMAGE_STALE_DAYS )); then
+        printf "→ Image is %s days old. Consider: qb update\n" "$days"
+    fi
 }
 
 _qb_app_running() {
@@ -321,7 +409,9 @@ _qb_start() {
     else
         printf "✓ WebUI ready\n"
     fi
-    
+
+    _qb_image_age_notice
+
     _qb_open_app
 }
 
@@ -599,7 +689,22 @@ _qb_update() {
         _qb_failure "Failed to inspect current qBittorrent image"
         return 1
     }
-    
+
+    local local_digest remote_digest
+    local_digest="$(_qb_local_repo_digest "$image")"
+    remote_digest="$(_qb_remote_index_digest "$image")"
+
+    if [[ -n "$local_digest" && -n "$remote_digest" ]]; then
+        if _qb_digests_equal "$local_digest" "$remote_digest"; then
+            printf "✓ Already up to date\n"
+            return 0
+        fi
+
+        printf "→ Newer image available\n"
+    else
+        printf "○ Could not compare digests; pulling to verify\n"
+    fi
+
     _qb_spinner "Pulling latest qBittorrent image..."
     
     if ! docker compose pull >/dev/null 2>&1; then
@@ -1000,6 +1105,17 @@ _qb_doctor() {
         printf "✗ Plugins directory: missing\n"
         issues=1
     fi
+
+    local days
+    if days="$(_qb_image_age_days)"; then
+        if (( days >= QB_IMAGE_STALE_DAYS )); then
+            printf "→ Image age: %s day(s) (consider qb update)\n" "$days"
+        else
+            printf "✓ Image age: %s day(s)\n" "$days"
+        fi
+    else
+        printf "○ Image age: unknown\n"
+    fi
     
     if [[ -f "$QB_API_KEY_FILE" ]]; then
         printf "✓ API key file: present\n"
@@ -1092,7 +1208,7 @@ _qb_help() {
         "  qb shell       Enter qBittorrent container" \
         "  qb info        Show container details" \
         "  qb version     Show qBittorrent version" \
-        "  qb update      Pull newer image when idle; recreate only if changed; drop old image" \
+        "  qb update      Digest-check then pull only if newer; drop old image" \
         "  qb images      Show local qBittorrent images and disk use" \
         "  qb prune       Remove unused local qBittorrent images (keeps the active one)" \
         "  qb repair      Recreate a broken qBittorrent container" \
