@@ -1072,3 +1072,22 @@ qb() {
             ;;
     esac
 }
+
+# Tab-complete subcommands after `qb` (e.g. `qb <Tab>` → start, quit, …).
+# Does not attach to a bare `q`. Registers only if compinit already ran.
+_qb_complete() {
+    local -a commands
+
+    commands=(
+        start quit restart status torrents logs shell
+        info version update images repair doctor layout help
+    )
+
+    if (( CURRENT == 2 )); then
+        _describe 'command' commands
+    fi
+}
+
+if (( $+functions[compdef] )); then
+    compdef _qb_complete qb
+fi

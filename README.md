@@ -35,6 +35,21 @@ Restart your shell or reload the configuration:
 source ~/.zshrc
 ```
 
+### Tab completion (optional)
+
+After `qb.zsh` is loaded, you can type `qb ` and press **Tab** to list or fill in subcommands (`start`, `quit`, `status`, and so on). Completion is tied to the full command name `qb`, not a bare `q`.
+
+This uses zsh’s built-in completion system. For it to register, source `qb.zsh` **after** you initialize completions in `~/.zshrc`:
+
+```zsh
+autoload -Uz compinit
+compinit
+# ... other setup ...
+source ~/qbittorrent/qb.zsh
+```
+
+Many Mac zsh setups (and Docker Desktop’s zsh snippet) already run `compinit`. If `compinit` was never set up, nothing fails: there is no prompt, warning, or error — Tab completion is simply unavailable and every `qb` command still works as usual.
+
 Start qBittorrent:
 
 ```zsh
