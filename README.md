@@ -150,6 +150,8 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 | `qb reannounce <id…>` | Force tracker reannounce. |
 | `qb force [--off] <id…>` | Enable (or `--off` disable) force start. |
 | `qb alt` | Toggle alternative global speed limits. |
+| `qb plugins` | Manage search plugins: `list`, `install <url>`, `enable`/`disable`, `update`, `remove`. |
+| `qb search <pattern>` | Search with enabled plugins; `--add N` adds result #N; `--limit`, `--watch`, `--timeout`. |
 | `qb logs [lines]` | Follow container logs; defaults to 50 lines. |
 | `qb shell` | Open a shell in the qBittorrent container. |
 | `qb info` | Show image, container, mount, and port details. |
@@ -166,7 +168,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 
 - **Lifecycle** (`start`, `quit`, `restart`, `repair`): may change state. `start` / `restart` (when down) / `repair` can bring things up. `quit` is idempotent (finishes a partial shutdown; says already stopped if nothing is left; blocks overlapping quit spam).
 - **Diagnose** (`status`, `doctor`, `help`): read-only; OK when everything is down.
-- **Need a live stack** (`torrents`, `show`, `add`, `pause`, `resume`, `remove`, `recheck`, `reannounce`, `force`, `alt`, `logs`, `shell`, `info`, `version`, `update`, `layout`): fail immediately with `Run: qb start` — checks qBittorrent via `/api/v2/app/version` (uses the API key when configured).
+- **Need a live stack** (`torrents`, `show`, `add`, `pause`, `resume`, `remove`, `recheck`, `reannounce`, `force`, `alt`, `plugins`, `search`, `logs`, `shell`, `info`, `version`, `update`, `layout`): fail immediately with `Run: qb start` — checks qBittorrent via `/api/v2/app/version` (uses the API key when configured).
 - **Need Docker only** (`images`, `prune`): fail with `Run: qb start` if the Docker engine is down.
 
 ## WebUI column layout (optional)
@@ -268,7 +270,7 @@ If automation fails, use Option A instead.
 | `qb.zsh` | `qb` CLI commands. |
 | `config/` | Persistent qBittorrent configuration and session state. |
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
-| `plugins/` | Local search plugins (third-party Python — review before enabling). |
+| `plugins/` | Local search plugins (third-party Python — review before enabling). Use `qb plugins` / `qb search`. |
 | `webui-layout.js` | Column layout script used by `qb layout`. |
 | `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_STYLE`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`, `QB_START_UI`. |
 

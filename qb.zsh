@@ -1866,6 +1866,549 @@ _qb_alt() {
     fi
 }
 
+_qb_plugins_help() {
+    printf '%s\n' \
+        "Usage: qb plugins <command>" \
+        "" \
+        "  list                 List installed search plugins" \
+        "  install <url>        Install plugin from URL (confirm; third-party Python)" \
+        "  enable <name>…       Enable plugin(s)" \
+        "  disable <name>…      Disable plugin(s)" \
+        "  update               Update all installed plugins" \
+        "  remove <name>…       Uninstall plugin(s)" \
+        "" \
+        "Official engines (examples):" \
+        "  https://raw.githubusercontent.com/qbittorrent/search-plugins/master/nova3/engines/eztv.py" \
+        "  https://raw.githubusercontent.com/qbittorrent/search-plugins/master/nova3/engines/piratebay.py"
+}
+
+_qb_plugins_list() {
+    local response
+
+    response="$(_qb_api_curl /api/v2/search/plugins)" || {
+        _qb_failure "Failed to list search plugins"
+        return 1
+    }
+
+    python3 - "$response" <<'PY'
+import json
+import sys
+
+try:
+    plugins = json.loads(sys.argv[1])
+except Exception as e:
+    print(f"Failed to parse plugins: {e}", file=sys.stderr)
+    sys.exit(1)
+
+if not plugins:
+    print("No search plugins installed.")
+    print("Install one, e.g.:")
+    print("  qb plugins install https://raw.githubusercontent.com/qbittorrent/search-plugins/master/nova3/engines/eztv.py")
+    print("Plugins are third-party Python — review before enabling.")
+    sys.exit(0)
+
+for p in sorted(plugins, key=lambda x: (x.get("name") or "").lower()):
+    name = p.get("name") or "?"
+    full = p.get("fullName") or name
+    ver = p.get("version") or "?"
+    en = "on" if p.get("enabled") else "off"
+    url = p.get("url") or "-"
+    print(f"{name}  [{en}]  v{ver}  {full}")
+    print(f"  {url}")
+PY
+}
+
+_qb_plugins_install() {
+    local url="$1"
+    local yes=0
+    local arg
+    local reply
+
+    for arg in "$@"; do
+        case "$arg" in
+            --yes|-y)
+                yes=1
+                ;;
+            -h|--help)
+                printf "Usage: qb plugins install [--yes] <plugin-url>\n"
+                return 0
+                ;;
+        esac
+    done
+
+    # Last non-flag arg is URL.
+    url=""
+    for arg in "$@"; do
+        case "$arg" in
+            --yes|-y|-h|--help) ;;
+            *)
+                url="$arg"
+                ;;
+        esac
+    done
+
+    if [[ -z "$url" ]]; then
+        _qb_line fail "Plugin URL required"
+        printf "Usage: qb plugins install [--yes] <plugin-url>\n"
+        return 1
+    fi
+
+    case "$url" in
+        http://*|https://*)
+            ;;
+        *)
+            _qb_line fail "Expected http(s) plugin URL"
+            return 1
+            ;;
+    esac
+
+    _qb_line info "Install plugin from:"
+    printf "  %s\n" "$url"
+    _qb_line info "Third-party Python runs inside the container"
+
+    if (( ! yes )); then
+        if [[ ! -t 0 ]]; then
+            _qb_line fail "Non-interactive shell: pass --yes to confirm"
+            return 1
+        fi
+        printf "Continue? [y/N] "
+        read -r reply
+        case "${reply:l}" in
+            y|yes) ;;
+            *)
+                _qb_line info "Cancelled"
+                return 0
+                ;;
+        esac
+    fi
+
+    if ! _qb_api_post /api/v2/search/installPlugin --data-urlencode "sources=$url" >/dev/null; then
+        _qb_failure "Failed to install plugin"
+        return 1
+    fi
+
+    _qb_success "Plugin install requested"
+    _qb_line info "Run: qb plugins list"
+}
+
+_qb_plugins_enable() {
+    local enable="$1"
+    shift
+    local names
+    local label
+
+    if (( $# == 0 )); then
+        _qb_line fail "Plugin name required"
+        return 1
+    fi
+
+    names="${(j:|:)@}"
+    label="enabled"
+    [[ "$enable" == "true" ]] || label="disabled"
+
+    if ! _qb_api_post /api/v2/search/enablePlugin \
+        --data-urlencode "names=$names" \
+        --data-urlencode "enable=$enable" >/dev/null; then
+        _qb_failure "Failed to set plugin state"
+        return 1
+    fi
+
+    _qb_success "Plugin(s) $label"
+}
+
+_qb_plugins_update() {
+    if ! _qb_api_post /api/v2/search/updatePlugins >/dev/null; then
+        _qb_failure "Failed to update plugins"
+        return 1
+    fi
+
+    _qb_success "Plugin update started"
+}
+
+_qb_plugins_remove() {
+    local names
+
+    if (( $# == 0 )); then
+        _qb_line fail "Plugin name required"
+        return 1
+    fi
+
+    names="${(j:|:)@}"
+
+    if ! _qb_api_post /api/v2/search/uninstallPlugin --data-urlencode "names=$names" >/dev/null; then
+        _qb_failure "Failed to remove plugin(s)"
+        return 1
+    fi
+
+    _qb_success "Plugin(s) removed"
+}
+
+_qb_plugins() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local cmd="${1:-list}"
+
+    case "$cmd" in
+        list)
+            _qb_plugins_list
+            ;;
+        install)
+            shift
+            _qb_plugins_install "$@"
+            ;;
+        enable)
+            shift
+            _qb_plugins_enable true "$@"
+            ;;
+        disable)
+            shift
+            _qb_plugins_enable false "$@"
+            ;;
+        update)
+            _qb_plugins_update
+            ;;
+        remove|uninstall)
+            shift
+            _qb_plugins_remove "$@"
+            ;;
+        -h|--help|help)
+            _qb_plugins_help
+            ;;
+        *)
+            _qb_line fail "Unknown plugins command: $cmd"
+            _qb_plugins_help
+            return 1
+            ;;
+    esac
+}
+
+_qb_search_enabled_count() {
+    local response
+
+    response="$(_qb_api_curl /api/v2/search/plugins)" || {
+        printf '0\n'
+        return 1
+    }
+
+    python3 - "$response" <<'PY'
+import json
+import sys
+try:
+    plugins = json.loads(sys.argv[1])
+except Exception:
+    print(0)
+    sys.exit(0)
+print(sum(1 for p in plugins if p.get("enabled")))
+PY
+}
+
+_qb_search() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local -a pattern_parts=()
+    local add_n=""
+    local limit=25
+    local watch=0
+    local category="all"
+    local plugins="enabled"
+    local timeout=60
+    local arg
+    local next=""
+    local pattern
+    local enabled_count
+    local start_json
+    local job_id
+    local elapsed=0
+    local status_json
+    local results_json
+    local job_status="Running"
+    local add_url
+
+    for arg in "$@"; do
+        if [[ -n "$next" ]]; then
+            case "$next" in
+                add) add_n="$arg" ;;
+                limit) limit="$arg" ;;
+                category) category="$arg" ;;
+                plugins) plugins="$arg" ;;
+                timeout) timeout="$arg" ;;
+            esac
+            next=""
+            continue
+        fi
+
+        case "$arg" in
+            --add)
+                next="add"
+                ;;
+            --limit)
+                next="limit"
+                ;;
+            --category)
+                next="category"
+                ;;
+            --plugins)
+                next="plugins"
+                ;;
+            --timeout)
+                next="timeout"
+                ;;
+            --watch|-w)
+                watch=1
+                ;;
+            -h|--help)
+                printf "Usage: qb search [options] <pattern>\n"
+                printf "  --add N         Add result #N after search\n"
+                printf "  --limit N       Max rows to show (default 25)\n"
+                printf "  --category C    Category (default all)\n"
+                printf "  --plugins P     Plugin list, all, or enabled (default enabled)\n"
+                printf "  --timeout N     Seconds to wait (default 60)\n"
+                printf "  --watch         Redraw results while search runs\n"
+                return 0
+                ;;
+            --*)
+                _qb_line fail "Unknown option: $arg"
+                return 1
+                ;;
+            *)
+                pattern_parts+=("$arg")
+                ;;
+        esac
+    done
+
+    if [[ -n "$next" ]]; then
+        _qb_line fail "Missing value for --$next"
+        return 1
+    fi
+
+    pattern="${(j: :)pattern_parts}"
+    if [[ -z "$pattern" ]]; then
+        _qb_line fail "Search pattern required"
+        printf "Usage: qb search [options] <pattern>\n"
+        return 1
+    fi
+
+    if [[ -n "$add_n" && ! "$add_n" =~ '^[0-9]+$' ]]; then
+        _qb_line fail "--add needs a number"
+        return 1
+    fi
+    if [[ ! "$limit" =~ '^[0-9]+$' || "$limit" -lt 1 ]]; then
+        _qb_line fail "--limit needs a positive number"
+        return 1
+    fi
+    if [[ ! "$timeout" =~ '^[0-9]+$' || "$timeout" -lt 1 ]]; then
+        _qb_line fail "--timeout needs a positive number"
+        return 1
+    fi
+
+    enabled_count="$(_qb_search_enabled_count)" || enabled_count=0
+    if (( enabled_count < 1 )) && [[ "$plugins" == "enabled" ]]; then
+        _qb_failure "No enabled search plugins"
+        printf "Run: qb plugins list\n"
+        printf "Install e.g.: qb plugins install https://raw.githubusercontent.com/qbittorrent/search-plugins/master/nova3/engines/eztv.py\n"
+        return 1
+    fi
+
+    _qb_spinner "Searching…"
+
+    start_json="$(
+        _qb_api_post /api/v2/search/start \
+            --data-urlencode "pattern=$pattern" \
+            --data-urlencode "plugins=$plugins" \
+            --data-urlencode "category=$category"
+    )" || {
+        _qb_failure "Failed to start search"
+        return 1
+    }
+
+    _qb_cleanup_spinner
+    printf '\r\033[2K'
+
+    job_id="$(
+        python3 - "$start_json" <<'PY'
+import json
+import sys
+try:
+    print(json.loads(sys.argv[1]).get("id") or "")
+except Exception:
+    sys.exit(1)
+PY
+    )" || {
+        _qb_failure "Failed to parse search job id"
+        return 1
+    }
+
+    if [[ -z "$job_id" ]]; then
+        _qb_failure "Search returned no job id"
+        return 1
+    fi
+
+    trap '_qb_api_post /api/v2/search/stop --data-urlencode "id='"$job_id"'" >/dev/null 2>&1
+          _qb_api_post /api/v2/search/delete --data-urlencode "id='"$job_id"'" >/dev/null 2>&1
+          trap - INT
+          return 130' INT
+
+    while (( elapsed < timeout )); do
+        status_json="$(_qb_api_curl "/api/v2/search/status?id=${job_id}")" || break
+        job_status="$(
+            python3 - "$status_json" <<'PY'
+import json
+import sys
+try:
+    data = json.loads(sys.argv[1])
+    if isinstance(data, list) and data:
+        print(data[0].get("status") or "")
+    elif isinstance(data, dict):
+        print(data.get("status") or "")
+except Exception:
+    print("")
+PY
+        )"
+
+        results_json="$(_qb_api_curl "/api/v2/search/results?id=${job_id}&limit=${limit}")" || results_json=""
+
+        if (( watch )) && [[ -n "$results_json" ]]; then
+            printf '\033[H\033[2J'
+            _qb_search_print_results "$results_json" "$limit"
+            _qb_line info "Status: ${job_status:-?}  (${elapsed}s / ${timeout}s)"
+        fi
+
+        [[ "$job_status" == "Stopped" ]] && break
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    # Final fetch
+    results_json="$(_qb_api_curl "/api/v2/search/results?id=${job_id}&limit=${limit}")" || {
+        _qb_api_post /api/v2/search/stop --data-urlencode "id=$job_id" >/dev/null 2>&1
+        _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
+        trap - INT
+        _qb_failure "Failed to fetch search results"
+        return 1
+    }
+
+    if [[ "$job_status" != "Stopped" ]]; then
+        _qb_api_post /api/v2/search/stop --data-urlencode "id=$job_id" >/dev/null 2>&1
+        _qb_line info "Search timed out after ${timeout}s; showing partial results"
+    else
+        _qb_success "Search finished"
+    fi
+
+    if (( ! watch )); then
+        _qb_search_print_results "$results_json" "$limit"
+    else
+        printf '\033[H\033[2J'
+        _qb_search_print_results "$results_json" "$limit"
+    fi
+
+    if [[ -n "$add_n" ]]; then
+        add_url="$(
+            python3 - "$results_json" "$add_n" <<'PY'
+import json
+import sys
+
+try:
+    data = json.loads(sys.argv[1])
+    rows = data.get("results") or []
+except Exception as e:
+    print(f"parse error: {e}", file=sys.stderr)
+    sys.exit(1)
+
+idx = int(sys.argv[2])
+if idx < 1 or idx > len(rows):
+    print(f"No result #{idx} (have {len(rows)})", file=sys.stderr)
+    sys.exit(1)
+
+row = rows[idx - 1]
+url = (row.get("fileUrl") or "").strip()
+if not url:
+    print("Result has no magnet/file URL", file=sys.stderr)
+    sys.exit(1)
+print(url)
+PY
+        )" || {
+            _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
+            trap - INT
+            return 1
+        }
+
+        _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
+        trap - INT
+        _qb_add "$add_url"
+        return $?
+    fi
+
+    _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
+    trap - INT
+    return 0
+}
+
+_qb_search_print_results() {
+    local results_json="$1"
+    local limit="${2:-25}"
+
+    python3 - "$results_json" "$limit" <<'PY'
+import json
+import sys
+
+
+def human_bytes(n):
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "?"
+    if n < 0:
+        return "?"
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    for unit in units:
+        if n < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(n)} {unit}"
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TiB"
+
+
+try:
+    data = json.loads(sys.argv[1])
+    rows = data.get("results") or []
+    total = data.get("total")
+    status = data.get("status") or ""
+except Exception as e:
+    print(f"Failed to parse results: {e}", file=sys.stderr)
+    sys.exit(1)
+
+limit = int(sys.argv[2])
+rows = rows[:limit]
+
+if not rows:
+    print("No results.")
+    if status:
+        print(f"(status={status}, total={total})")
+    sys.exit(0)
+
+print(f"Results: {len(rows)}" + (f" / {total}" if total is not None else "") + (f"  [{status}]" if status else ""))
+for i, row in enumerate(rows, 1):
+    name = row.get("fileName") or "unknown"
+    size = human_bytes(row.get("fileSize"))
+    seeds = row.get("nbSeeders")
+    leech = row.get("nbLeechers")
+    site = row.get("siteUrl") or "-"
+    url = (row.get("fileUrl") or "").strip()
+    if url.startswith("magnet:"):
+        link = url[:48] + "…" if len(url) > 48 else url
+    elif url:
+        link = url if len(url) <= 64 else url[:61] + "…"
+    else:
+        link = "(no url)"
+    print(f"{i:3d}. {name}")
+    print(f"     {size}  S:{seeds} L:{leech}  {site}")
+    print(f"     {link}")
+PY
+}
+
 _qb_logs() {
     local lines="${2:-50}"
 
@@ -2482,6 +3025,8 @@ _qb_help() {
         "  qb reannounce  Force tracker reannounce" \
         "  qb force       Enable force start (--off to disable)" \
         "  qb alt         Toggle alternative global speed limits" \
+        "  qb plugins     Manage search plugins (list/install/enable/…)" \
+        "  qb search      Search via enabled plugins; --add N to download" \
         "  qb logs        Follow last 50 log lines" \
         "  qb logs 200    Follow last 200 log lines" \
         "  qb shell       Enter qBittorrent container" \
@@ -2573,6 +3118,16 @@ qb() {
             _qb_alt "$@"
             ;;
 
+        plugins)
+            shift
+            _qb_plugins "$@"
+            ;;
+
+        search)
+            shift
+            _qb_search "$@"
+            ;;
+
         logs)
             _qb_logs "$@"
             ;;
@@ -2636,7 +3191,7 @@ _qb_complete() {
 
     commands=(
         start quit restart status torrents show add pause resume remove
-        recheck reannounce force alt
+        recheck reannounce force alt plugins search
         logs shell info version update images prune repair doctor layout help
     )
 
