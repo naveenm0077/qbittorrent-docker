@@ -1907,14 +1907,43 @@ if not plugins:
     print("Plugins are third-party Python — review before enabling.")
     sys.exit(0)
 
+rows = []
 for p in sorted(plugins, key=lambda x: (x.get("name") or "").lower()):
-    name = p.get("name") or "?"
-    full = p.get("fullName") or name
-    ver = p.get("version") or "?"
-    en = "on" if p.get("enabled") else "off"
-    url = p.get("url") or "-"
-    print(f"{name}  [{en}]  v{ver}  {full}")
-    print(f"  {url}")
+    rows.append(
+        (
+            p.get("name") or "?",
+            "on" if p.get("enabled") else "off",
+            p.get("version") or "?",
+            p.get("fullName") or p.get("name") or "?",
+            p.get("url") or "-",
+        )
+    )
+
+headers = ("NAME", "ENABLED", "VERSION", "FULL NAME", "URL")
+widths = [len(h) for h in headers]
+for row in rows:
+    for i, cell in enumerate(row):
+        widths[i] = max(widths[i], len(str(cell)))
+
+# Cap URL column so wide hosts don't blow the terminal.
+widths[4] = min(widths[4], 48)
+
+def fmt(cell, width, truncate=False):
+    text = str(cell)
+    if truncate and len(text) > width:
+        text = text[: max(width - 1, 1)] + "…"
+    return text.ljust(width)
+
+header_line = "  ".join(fmt(h, widths[i]) for i, h in enumerate(headers))
+rule = "  ".join("-" * w for w in widths)
+print(header_line)
+print(rule)
+for row in rows:
+    print(
+        "  ".join(
+            fmt(row[i], widths[i], truncate=(i == 4)) for i in range(len(headers))
+        )
+    )
 PY
 }
 
@@ -2109,7 +2138,8 @@ _qb_search() {
 
     local -a pattern_parts=()
     local add_n=""
-    local limit=25
+    local page_size=10
+    local fetch_limit=200
     local watch=0
     local category="all"
     local plugins="enabled"
@@ -2123,14 +2153,16 @@ _qb_search() {
     local elapsed=0
     local status_json
     local results_json
+    local sorted_json
     local job_status="Running"
     local add_url
+    local cols
 
     for arg in "$@"; do
         if [[ -n "$next" ]]; then
             case "$next" in
                 add) add_n="$arg" ;;
-                limit) limit="$arg" ;;
+                limit) page_size="$arg" ;;
                 category) category="$arg" ;;
                 plugins) plugins="$arg" ;;
                 timeout) timeout="$arg" ;;
@@ -2160,12 +2192,14 @@ _qb_search() {
                 ;;
             -h|--help)
                 printf "Usage: qb search [options] <pattern>\n"
-                printf "  --add N         Add result #N after search\n"
-                printf "  --limit N       Max rows to show (default 25)\n"
+                printf "  Pattern may be quoted or bare words (joined with spaces).\n"
+                printf "  --add N         Add result #N (seeds-desc order) after search\n"
+                printf "  --limit N       Rows per page (default 10)\n"
                 printf "  --category C    Category (default all)\n"
                 printf "  --plugins P     Plugin list, all, or enabled (default enabled)\n"
                 printf "  --timeout N     Seconds to wait (default 60)\n"
-                printf "  --watch         Redraw results while search runs\n"
+                printf "  --watch         Redraw live table while searching (no spinner)\n"
+                printf "  After search:  type a # to add, < > to page, Enter/q to quit\n"
                 return 0
                 ;;
             --*)
@@ -2194,7 +2228,7 @@ _qb_search() {
         _qb_line fail "--add needs a number"
         return 1
     fi
-    if [[ ! "$limit" =~ '^[0-9]+$' || "$limit" -lt 1 ]]; then
+    if [[ ! "$page_size" =~ '^[0-9]+$' || "$page_size" -lt 1 ]]; then
         _qb_line fail "--limit needs a positive number"
         return 1
     fi
@@ -2211,7 +2245,12 @@ _qb_search() {
         return 1
     fi
 
-    _qb_spinner "Searching…"
+    cols="${COLUMNS:-}"
+    [[ "$cols" =~ '^[0-9]+$' ]] || cols="$(tput cols 2>/dev/null || echo 80)"
+
+    if (( ! watch )); then
+        _qb_spinner "Searching…"
+    fi
 
     start_json="$(
         _qb_api_post /api/v2/search/start \
@@ -2222,9 +2261,6 @@ _qb_search() {
         _qb_failure "Failed to start search"
         return 1
     }
-
-    _qb_cleanup_spinner
-    printf '\r\033[2K'
 
     job_id="$(
         python3 - "$start_json" <<'PY'
@@ -2245,7 +2281,8 @@ PY
         return 1
     fi
 
-    trap '_qb_api_post /api/v2/search/stop --data-urlencode "id='"$job_id"'" >/dev/null 2>&1
+    trap '_qb_cleanup_spinner
+          _qb_api_post /api/v2/search/stop --data-urlencode "id='"$job_id"'" >/dev/null 2>&1
           _qb_api_post /api/v2/search/delete --data-urlencode "id='"$job_id"'" >/dev/null 2>&1
           trap - INT
           return 130' INT
@@ -2267,12 +2304,14 @@ except Exception:
 PY
         )"
 
-        results_json="$(_qb_api_curl "/api/v2/search/results?id=${job_id}&limit=${limit}")" || results_json=""
-
-        if (( watch )) && [[ -n "$results_json" ]]; then
-            printf '\033[H\033[2J'
-            _qb_search_print_results "$results_json" "$limit"
-            _qb_line info "Status: ${job_status:-?}  (${elapsed}s / ${timeout}s)"
+        if (( watch )); then
+            results_json="$(_qb_api_curl "/api/v2/search/results?id=${job_id}&limit=${fetch_limit}")" || results_json=""
+            if [[ -n "$results_json" ]]; then
+                sorted_json="$(_qb_search_sort_json "$results_json")" || sorted_json="[]"
+                printf '\033[H\033[2J'
+                _qb_search_print_page "$sorted_json" 0 "$page_size" "$cols" "$job_status"
+                _qb_line info "Searching… ${elapsed}s / ${timeout}s  (< > after finish)"
+            fi
         fi
 
         [[ "$job_status" == "Stopped" ]] && break
@@ -2280,8 +2319,7 @@ PY
         elapsed=$((elapsed + 1))
     done
 
-    # Final fetch
-    results_json="$(_qb_api_curl "/api/v2/search/results?id=${job_id}&limit=${limit}")" || {
+    results_json="$(_qb_api_curl "/api/v2/search/results?id=${job_id}&limit=${fetch_limit}")" || {
         _qb_api_post /api/v2/search/stop --data-urlencode "id=$job_id" >/dev/null 2>&1
         _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
         trap - INT
@@ -2291,27 +2329,64 @@ PY
 
     if [[ "$job_status" != "Stopped" ]]; then
         _qb_api_post /api/v2/search/stop --data-urlencode "id=$job_id" >/dev/null 2>&1
+        _qb_cleanup_spinner
+        printf '\r\033[2K'
         _qb_line info "Search timed out after ${timeout}s; showing partial results"
     else
         _qb_success "Search finished"
     fi
 
-    if (( ! watch )); then
-        _qb_search_print_results "$results_json" "$limit"
-    else
-        printf '\033[H\033[2J'
-        _qb_search_print_results "$results_json" "$limit"
-    fi
+    sorted_json="$(_qb_search_sort_json "$results_json")" || sorted_json="[]"
+
+    _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
+    trap - INT
 
     if [[ -n "$add_n" ]]; then
-        add_url="$(
-            python3 - "$results_json" "$add_n" <<'PY'
+        _qb_search_print_page "$sorted_json" 0 "$page_size" "$cols" ""
+        add_url="$(_qb_search_url_at "$sorted_json" "$add_n")" || return 1
+        _qb_add "$add_url"
+        return $?
+    fi
+
+    _qb_search_browse "$sorted_json" "$page_size" "$cols"
+}
+
+# API results JSON → sorted JSON array (seeds desc).
+_qb_search_sort_json() {
+    local results_json="$1"
+
+    python3 - "$results_json" <<'PY'
 import json
 import sys
 
 try:
     data = json.loads(sys.argv[1])
-    rows = data.get("results") or []
+    rows = list(data.get("results") or [])
+except Exception as e:
+    print(f"Failed to parse results: {e}", file=sys.stderr)
+    sys.exit(1)
+
+def seeds(row):
+    try:
+        return int(row.get("nbSeeders") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+rows.sort(key=seeds, reverse=True)
+print(json.dumps(rows, separators=(",", ":")))
+PY
+}
+
+_qb_search_url_at() {
+    local sorted_json="$1"
+    local idx="$2"
+
+    python3 - "$sorted_json" "$idx" <<'PY'
+import json
+import sys
+
+try:
+    rows = json.loads(sys.argv[1])
 except Exception as e:
     print(f"parse error: {e}", file=sys.stderr)
     sys.exit(1)
@@ -2321,37 +2396,27 @@ if idx < 1 or idx > len(rows):
     print(f"No result #{idx} (have {len(rows)})", file=sys.stderr)
     sys.exit(1)
 
-row = rows[idx - 1]
-url = (row.get("fileUrl") or "").strip()
+url = (rows[idx - 1].get("fileUrl") or "").strip()
 if not url:
     print("Result has no magnet/file URL", file=sys.stderr)
     sys.exit(1)
 print(url)
 PY
-        )" || {
-            _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
-            trap - INT
-            return 1
-        }
-
-        _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
-        trap - INT
-        _qb_add "$add_url"
-        return $?
-    fi
-
-    _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
-    trap - INT
-    return 0
 }
 
-_qb_search_print_results() {
-    local results_json="$1"
-    local limit="${2:-25}"
+# Print one page of a sorted results JSON array.
+# page is 0-based. status_note optional footer context.
+_qb_search_print_page() {
+    local sorted_json="$1"
+    local page="$2"
+    local page_size="$3"
+    local cols="$4"
+    local status_note="${5:-}"
 
-    python3 - "$results_json" "$limit" <<'PY'
+    python3 - "$sorted_json" "$page" "$page_size" "$cols" "$status_note" <<'PY'
 import json
 import sys
+from urllib.parse import urlparse
 
 
 def human_bytes(n):
@@ -2371,42 +2436,198 @@ def human_bytes(n):
     return f"{n:.1f} TiB"
 
 
+def short_site(url):
+    if not url:
+        return "-"
+    try:
+        host = urlparse(url).netloc or url
+    except Exception:
+        host = url
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def trunc(text, width):
+    text = str(text)
+    if width <= 1:
+        return "…"
+    if len(text) <= width:
+        return text
+    return text[: width - 1] + "…"
+
+
 try:
-    data = json.loads(sys.argv[1])
-    rows = data.get("results") or []
-    total = data.get("total")
-    status = data.get("status") or ""
+    rows = json.loads(sys.argv[1])
 except Exception as e:
     print(f"Failed to parse results: {e}", file=sys.stderr)
     sys.exit(1)
 
-limit = int(sys.argv[2])
-rows = rows[:limit]
+page = int(sys.argv[2])
+page_size = int(sys.argv[3])
+cols = int(sys.argv[4] or 80)
+status_note = sys.argv[5] if len(sys.argv) > 5 else ""
+
+total = len(rows)
+pages = max(1, (total + page_size - 1) // page_size) if total else 1
+if page < 0:
+    page = 0
+if page >= pages:
+    page = pages - 1
+
+start = page * page_size
+chunk = rows[start : start + page_size]
 
 if not rows:
     print("No results.")
-    if status:
-        print(f"(status={status}, total={total})")
     sys.exit(0)
 
-print(f"Results: {len(rows)}" + (f" / {total}" if total is not None else "") + (f"  [{status}]" if status else ""))
-for i, row in enumerate(rows, 1):
+# Fixed columns: # SIZE SEEDS LEECH SITE — NAME gets the remainder.
+idx_w = max(2, len(str(start + len(chunk))))
+size_w = 8
+seeds_w = 5
+leech_w = 5
+site_w = 18
+gap = 2
+fixed = idx_w + size_w + seeds_w + leech_w + site_w + gap * 5
+name_w = max(12, cols - fixed)
+if name_w > 60:
+    name_w = 60
+
+headers = ("#", "NAME", "SIZE", "SEEDS", "LEECH", "SITE")
+widths = [idx_w, name_w, size_w, seeds_w, leech_w, site_w]
+
+def cell(text, width, align="left", cut=False):
+    text = str(text)
+    if cut:
+        text = trunc(text, width)
+    if align == "right":
+        return text.rjust(width)[:width]
+    return text.ljust(width)[:width]
+
+print(f"Results: {total}  page {page + 1}/{pages}" + (f"  [{status_note}]" if status_note else ""))
+print("  ".join(cell(h, widths[i]) for i, h in enumerate(headers)))
+print("  ".join("-" * w for w in widths))
+
+for i, row in enumerate(chunk):
+    n = start + i + 1
     name = row.get("fileName") or "unknown"
     size = human_bytes(row.get("fileSize"))
-    seeds = row.get("nbSeeders")
-    leech = row.get("nbLeechers")
-    site = row.get("siteUrl") or "-"
-    url = (row.get("fileUrl") or "").strip()
-    if url.startswith("magnet:"):
-        link = url[:48] + "…" if len(url) > 48 else url
-    elif url:
-        link = url if len(url) <= 64 else url[:61] + "…"
-    else:
-        link = "(no url)"
-    print(f"{i:3d}. {name}")
-    print(f"     {size}  S:{seeds} L:{leech}  {site}")
-    print(f"     {link}")
+    try:
+        seeds = int(row.get("nbSeeders") or 0)
+    except (TypeError, ValueError):
+        seeds = 0
+    try:
+        leech = int(row.get("nbLeechers") or 0)
+    except (TypeError, ValueError):
+        leech = 0
+    site = short_site(row.get("siteUrl") or "")
+    print(
+        "  ".join(
+            [
+                cell(n, idx_w, "right"),
+                cell(name, name_w, cut=True),
+                cell(size, size_w, "right"),
+                cell(seeds, seeds_w, "right"),
+                cell(leech, leech_w, "right"),
+                cell(site, site_w, cut=True),
+            ]
+        )
+    )
 PY
+}
+
+# Interactive pagination (TTY): table + prompt for # / < > / q.
+# Non-TTY: first page only.
+_qb_search_browse() {
+    local sorted_json="$1"
+    local page_size="$2"
+    local cols="$3"
+    local page=0
+    local pages
+    local total
+    local reply
+    local add_url
+
+    total="$(
+        python3 - "$sorted_json" <<'PY'
+import json
+import sys
+try:
+    print(len(json.loads(sys.argv[1])))
+except Exception:
+    print(0)
+PY
+    )"
+
+    if (( total == 0 )); then
+        print "No results."
+        return 0
+    fi
+
+    pages=$(( (total + page_size - 1) / page_size ))
+    (( pages < 1 )) && pages=1
+
+    if [[ ! -t 0 || ! -t 1 ]]; then
+        _qb_search_print_page "$sorted_json" 0 "$page_size" "$cols" ""
+        if (( pages > 1 )); then
+            _qb_line info "Showing page 1/${pages}. Use a TTY to page / pick a #."
+        fi
+        _qb_line info "Add with: qb search … --add N"
+        return 0
+    fi
+
+    while true; do
+        printf '\033[H\033[2J'
+        _qb_search_print_page "$sorted_json" "$page" "$page_size" "$cols" ""
+        printf '\n'
+        printf "Add # (1-%s), < > page, Enter/q quit: " "$total"
+        read -r reply || break
+        reply="${reply##[[:space:]]##}"
+        reply="${reply%%[[:space:]]##}"
+
+        case "$reply" in
+            ''|q|Q)
+                break
+                ;;
+            '>'|'.'|'l'|'L'|'n'|'N')
+                if (( page < pages - 1 )); then
+                    page=$((page + 1))
+                fi
+                ;;
+            '<'|','|'h'|'H'|'p'|'P')
+                if (( page > 0 )); then
+                    page=$((page - 1))
+                fi
+                ;;
+            <->)
+                # zsh pattern: digits only
+                if (( reply < 1 || reply > total )); then
+                    _qb_line fail "Pick a # between 1 and $total"
+                    printf "Press Enter…"
+                    read -r
+                    continue
+                fi
+                add_url="$(_qb_search_url_at "$sorted_json" "$reply")" || {
+                    _qb_line fail "Could not resolve #$reply"
+                    printf "Press Enter…"
+                    read -r
+                    continue
+                }
+                printf '\n'
+                _qb_add "$add_url"
+                return $?
+                ;;
+            *)
+                _qb_line fail "Enter a result #, < or >, or q"
+                printf "Press Enter…"
+                read -r
+                ;;
+        esac
+    done
+
+    printf '\n'
+    return 0
 }
 
 _qb_logs() {

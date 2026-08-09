@@ -50,7 +50,7 @@ QB_STYLE=color   # same marks + ANSI (default; like gh); green braille spinner
 QB_STYLE=emoji   # ✅ ❌ 🛑 ➡️ ↗️; moon-phase spinner
 ```
 
-`bare` / `color` / `emoji` details above. Color is skipped when output is not a TTY or when `NO_COLOR` is set. Set `FORCE_COLOR=1` to keep ANSI even when piped.
+Color is skipped when output is not a TTY or when `NO_COLOR` is set. Set `FORCE_COLOR=1` to keep ANSI even when piped.
 
 ### WebUI network bind (optional)
 
@@ -133,9 +133,11 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 
 ## Commands
 
+Torrent ids are a **hash prefix** or a **unique name substring**.
+
 | Command | Description |
 | --- | --- |
-| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App unless `QB_START_UI=cli` or `qb start --cli` (idempotent; never a Safari tab). Remounts if `QB_DOWNLOADS` changed. If the local image is 90+ days old **and** a newer registry digest exists, prints a one-line suggestion to run `qb update` (does not auto-update; no nag when already latest or offline). |
+| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App unless `QB_START_UI=cli` or `qb start --cli` (idempotent; never a Safari tab). Remounts if `QB_DOWNLOADS` or the WebUI bind changed. If the local image is 90+ days old **and** a newer registry digest exists, prints a one-line suggestion to run `qb update` (does not auto-update; no nag when already latest or offline). |
 | `qb quit` | Close the WebUI app and stop qBittorrent. Docker Desktop stops only when no other containers are running (override with `QB_QUIT_DOCKER=keep`). |
 | `qb restart` | Restart qBittorrent and wait for the WebUI. |
 | `qb status` | Show Docker, container, WebUI, transfer speeds (when API works), and prefs. |
@@ -151,7 +153,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 | `qb force [--off] <id…>` | Enable (or `--off` disable) force start. |
 | `qb alt` | Toggle alternative global speed limits. |
 | `qb plugins` | Manage search plugins: `list`, `install <url>`, `enable`/`disable`, `update`, `remove`. |
-| `qb search <pattern>` | Search with enabled plugins; `--add N` adds result #N; `--limit`, `--watch`, `--timeout`. |
+| `qb search <pattern>` | Search with enabled plugins (spinner while waiting). Results table sorted by seeds; 10/page on a TTY. Type a `#` to add, `<` `>` to page, Enter/`q` to quit. `--add N` adds result #N non-interactively; `--limit` page size; `--watch` live table; `--timeout`, `--category`, `--plugins`. Pattern may be quoted or bare words. |
 | `qb logs [lines]` | Follow container logs; defaults to 50 lines. |
 | `qb shell` | Open a shell in the qBittorrent container. |
 | `qb info` | Show image, container, mount, and port details. |
