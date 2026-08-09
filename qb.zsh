@@ -13,6 +13,9 @@ QB_IMAGE_STALE_DAYS=60
 QB_QUIT_LOCK="/tmp/qb-quit.lock"
 QB_STYLE_DEFAULT="color"
 typeset -g QB_STYLE="$QB_STYLE_DEFAULT"
+QB_WEBUI_BIND_DEFAULT="localhost"
+typeset -g QB_WEBUI_BIND="$QB_WEBUI_BIND_DEFAULT"
+typeset -g QB_WEBUI_PUBLISH="127.0.0.1:8080"
 # Sticky: color allowed for this shell (survives $() subshells where -t 1 is false).
 typeset -g QB_COLOR_OK=0
 
@@ -404,6 +407,56 @@ _qb_refresh_downloads() {
     export QB_DOWNLOADS
 }
 
+# Load QB_WEBUI_BIND from .env.qbittorrent (optional). Default: localhost-only publish.
+# localhost → 127.0.0.1:8080:8080 ; lan → 0.0.0.0:8080:8080
+_qb_refresh_webui_bind() {
+    local configured=""
+    local line=""
+
+    if [[ -f "$QB_API_KEY_FILE" ]]; then
+        line="$(
+            grep -E '^[[:space:]]*QB_WEBUI_BIND[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
+                tail -n 1
+        )"
+        configured="${line#*=}"
+        configured="${configured//$'\r'/}"
+        configured="${configured//$'\n'/}"
+        configured="${configured#"${configured%%[![:space:]]*}"}"
+        configured="${configured%"${configured##*[![:space:]]}"}"
+        configured="${configured#\"}"
+        configured="${configured%\"}"
+        configured="${configured#\'}"
+        configured="${configured%\'}"
+        configured="${configured:l}"
+    fi
+
+    if [[ -z "$configured" ]]; then
+        [[ -n "$QB_WEBUI_BIND" ]] || QB_WEBUI_BIND="$QB_WEBUI_BIND_DEFAULT"
+    else
+        case "$configured" in
+            localhost|local|loopback|127.0.0.1)
+                QB_WEBUI_BIND="localhost"
+                ;;
+            lan|all|any|0.0.0.0|\*)
+                QB_WEBUI_BIND="lan"
+                ;;
+            *)
+                QB_WEBUI_BIND="$QB_WEBUI_BIND_DEFAULT"
+                ;;
+        esac
+    fi
+
+    if [[ "$QB_WEBUI_BIND" == "lan" ]]; then
+        QB_WEBUI_PUBLISH="0.0.0.0:8080"
+    else
+        QB_WEBUI_BIND="localhost"
+        QB_WEBUI_PUBLISH="127.0.0.1:8080"
+    fi
+
+    export QB_WEBUI_BIND
+    export QB_WEBUI_PUBLISH
+}
+
 _qb_downloads_mount_matches() {
     local src
 
@@ -421,6 +474,25 @@ _qb_downloads_mount_matches() {
     fi
 
     [[ "$src" == "$QB_DOWNLOADS" ]]
+}
+
+# True when container's published 8080 HostIp matches QB_WEBUI_BIND.
+_qb_webui_publish_matches() {
+    local host_ip
+
+    _qb_container_exists || return 1
+
+    host_ip="$(
+        docker inspect qbittorrent \
+            --format '{{with index .HostConfig.PortBindings "8080/tcp"}}{{with index . 0}}{{.HostIp}}{{end}}{{end}}' \
+            2>/dev/null
+    )"
+
+    if [[ "$QB_WEBUI_BIND" == "lan" ]]; then
+        [[ -z "$host_ip" || "$host_ip" == "0.0.0.0" ]]
+    else
+        [[ "$host_ip" == "127.0.0.1" ]]
+    fi
 }
 
 # Authenticated WebAPI curl. Header via process substitution so the key is
@@ -754,6 +826,7 @@ _qb_close_app() {
 
 _qb_start() {
     _qb_refresh_downloads
+    _qb_refresh_webui_bind
 
     if ! _qb_docker_running; then
         _qb_spinner "Starting Docker Desktop..."
@@ -786,7 +859,7 @@ _qb_start() {
         fi
         
         _qb_success "qBittorrent started"
-    elif ! _qb_downloads_mount_matches; then
+    elif ! _qb_downloads_mount_matches || ! _qb_webui_publish_matches; then
         cd "$QB_DIR" || {
             _qb_failure "qBittorrent directory not found"
             return 1
@@ -797,15 +870,16 @@ _qb_start() {
             return 1
         }
 
-        _qb_spinner "Updating downloads mount..."
+        _qb_spinner "Updating container mounts/ports..."
 
         if ! docker compose up -d --force-recreate >/dev/null 2>&1; then
-            _qb_failure "Failed to update downloads mount"
+            _qb_failure "Failed to update container mounts/ports"
             return 1
         fi
 
-        _qb_success "Downloads mount updated"
-        _qb_line info "Host path: $QB_DOWNLOADS"
+        _qb_success "Container mounts/ports updated"
+        _qb_line info "Downloads: $QB_DOWNLOADS"
+        _qb_line info "WebUI bind: $QB_WEBUI_BIND ($QB_WEBUI_PUBLISH)"
     fi
     
     if ! _qb_webui_ready; then
@@ -828,6 +902,7 @@ _qb_start() {
 
 _qb_quit() {
     _qb_refresh_downloads
+    _qb_refresh_webui_bind
 
     if ! _qb_quit_lock_acquire; then
         return 0
@@ -912,6 +987,7 @@ _qb_quit() {
 
 _qb_restart() {
     _qb_refresh_downloads
+    _qb_refresh_webui_bind
 
     if _qb_container_running; then
         cd "$QB_DIR" || {
@@ -982,6 +1058,7 @@ _qb_status() {
     fi
 
     _qb_line info "Output style: $QB_STYLE"
+    _qb_line info "WebUI bind: $QB_WEBUI_BIND"
 }
 
 _qb_torrents() {
@@ -1078,6 +1155,7 @@ _qb_update() {
     _qb_require_stack || return 1
     _qb_require_api || return 1
     _qb_refresh_downloads
+    _qb_refresh_webui_bind
 
     cd "$QB_DIR" || {
         _qb_failure "qBittorrent directory not found"
@@ -1375,6 +1453,7 @@ _qb_prune() {
 
 _qb_repair() {
     _qb_refresh_downloads
+    _qb_refresh_webui_bind
 
     if ! _qb_docker_running; then
         _qb_spinner "Starting Docker Desktop..."
@@ -1639,6 +1718,7 @@ qb() {
 
     _qb_refresh_style
     _qb_refresh_downloads
+    _qb_refresh_webui_bind
     _qb_update_color_ok
 
     case "$1" in
@@ -1739,4 +1819,5 @@ fi
 
 _qb_refresh_style
 _qb_refresh_downloads
+_qb_refresh_webui_bind
 _qb_update_color_ok

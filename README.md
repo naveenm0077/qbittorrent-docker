@@ -50,7 +50,19 @@ QB_STYLE=color   # same marks + ANSI (default; like gh); green braille spinner
 QB_STYLE=emoji   # ✅ ❌ 🛑 ➡️ ↗️; moon-phase spinner
 ```
 
-Aliases: `plain`→`bare`, `ansi`/`gh`→`color`, `rich`/`boxes`→`emoji`. Color is skipped when output is not a TTY or when `NO_COLOR` is set. Set `FORCE_COLOR=1` to keep ANSI even when piped.
+`bare` / `color` / `emoji` details above. Color is skipped when output is not a TTY or when `NO_COLOR` is set. Set `FORCE_COLOR=1` to keep ANSI even when piped.
+
+### WebUI network bind (optional)
+
+By default Docker publishes the WebUI on **localhost only** (`127.0.0.1:8080`), so other devices on your Wi‑Fi cannot open the login page. The app inside the container still listens normally; this only limits the host publish.
+
+To allow LAN access (still needs password / API key):
+
+```zsh
+QB_WEBUI_BIND=lan
+```
+
+Then run `qb start` (recreates if the publish changed) or `qb repair`. Peer port `6881` is unchanged.
 
 Load the CLI from your `~/.zshrc`:
 
@@ -228,7 +240,7 @@ If automation fails, use Option A instead.
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
 | `plugins/` | Local qBittorrent search plugins. |
 | `webui-layout.js` | Column layout script used by `qb layout`. |
-| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, optional `QB_STYLE`. |
+| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_STYLE`, `QB_WEBUI_BIND`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
 
@@ -236,7 +248,7 @@ If automation fails, use Option A instead.
 
 | Port | Protocol | Purpose |
 | --- | --- | --- |
-| 8080 | TCP | qBittorrent WebUI |
+| 8080 | TCP | qBittorrent WebUI (default host bind: localhost only; see `QB_WEBUI_BIND`) |
 | 6881 | TCP/UDP | BitTorrent peer connections |
 
-The WebUI is intended for local use. Do not expose port 8080 to an untrusted network without reviewing qBittorrent authentication and network settings.
+The WebUI is intended for local use. Default publish is `127.0.0.1` only. Set `QB_WEBUI_BIND=lan` if you knowingly want LAN access, and keep a strong WebUI password / API key.
