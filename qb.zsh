@@ -744,7 +744,13 @@ _qb_active_downloads() {
 }
 
 _qb_torrents_info() {
-    _qb_api_curl '/api/v2/torrents/info'
+    local filter="${1:-}"
+
+    if [[ -n "$filter" ]]; then
+        _qb_api_curl "/api/v2/torrents/info?filter=${filter}"
+    else
+        _qb_api_curl '/api/v2/torrents/info'
+    fi
 }
 
 _qb_active_download_count() {
@@ -1252,6 +1258,10 @@ _qb_status() {
         fi
     fi
 
+    if _qb_api_ok; then
+        _qb_transfer_print
+    fi
+
     _qb_line info "Output style: $QB_STYLE"
     _qb_line info "WebUI bind: $QB_WEBUI_BIND"
     if [[ "$QB_QUIT_DOCKER" == "keep" ]]; then
@@ -1266,10 +1276,58 @@ _qb_status() {
     fi
 }
 
+_qb_transfer_print() {
+    local response
+    local alt_mode
+    local line
+
+    response="$(_qb_api_curl /api/v2/transfer/info)" || return 0
+    alt_mode="$(_qb_api_curl /api/v2/transfer/speedLimitsMode 2>/dev/null)" || alt_mode=""
+
+    line="$(
+        python3 - "$response" "$alt_mode" <<'PY'
+import json
+import sys
+
+
+def human_rate(n):
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "?"
+    if n <= 0:
+        return "0 B/s"
+    units = ["B/s", "KiB/s", "MiB/s", "GiB/s"]
+    for unit in units:
+        if n < 1024 or unit == units[-1]:
+            if unit == "B/s":
+                return f"{int(n)} {unit}"
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GiB/s"
+
+
+try:
+    info = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+
+dl = human_rate(info.get("dl_info_speed") or 0)
+up = human_rate(info.get("up_info_speed") or 0)
+alt = (sys.argv[2] or "").strip()
+alt_label = "on" if alt == "1" else "off"
+print(f"Transfer: ↓{dl}  ↑{up}  alt-limits={alt_label}")
+PY
+    )" || return 0
+
+    [[ -n "$line" ]] && _qb_line info "$line"
+}
+
 _qb_torrents_print() {
+    local filter="${1:-}"
     local response
 
-    response="$(_qb_torrents_info)" || {
+    response="$(_qb_torrents_info "$filter")" || {
         _qb_failure "Failed to query qBittorrent"
         return 1
     }
@@ -1402,6 +1460,7 @@ _qb_torrents() {
     _qb_require_api || return 1
 
     local watch=0
+    local filter=""
     local arg
 
     for arg in "$@"; do
@@ -1409,28 +1468,49 @@ _qb_torrents() {
             --watch|-w)
                 watch=1
                 ;;
+            --downloading)
+                filter="downloading"
+                ;;
+            --seeding)
+                filter="seeding"
+                ;;
+            --stopped|--paused)
+                filter="stopped"
+                ;;
+            --completed)
+                filter="completed"
+                ;;
+            --active)
+                filter="active"
+                ;;
+            --errored)
+                filter="errored"
+                ;;
             -h|--help)
-                printf "Usage: qb torrents [--watch]\n"
-                printf "  --watch / -w  Redraw list every 2s until Ctrl-C\n"
+                printf "Usage: qb torrents [--watch] [--downloading|--seeding|--stopped|--completed|--active|--errored]\n"
+                printf "  --watch / -w     Redraw list every 2s until Ctrl-C\n"
+                printf "  --downloading    Only downloading\n"
+                printf "  --seeding        Only seeding\n"
+                printf "  --stopped        Only stopped (alias: --paused)\n"
                 return 0
                 ;;
             *)
                 _qb_line fail "Unknown option: $arg"
-                printf "Usage: qb torrents [--watch]\n"
+                printf "Usage: qb torrents [--watch] [--downloading|--seeding|--stopped]\n"
                 return 1
                 ;;
         esac
     done
 
     if (( ! watch )); then
-        _qb_torrents_print
+        _qb_torrents_print "$filter"
         return $?
     fi
 
     trap 'break' INT
     while true; do
         printf '\033[H\033[2J'
-        _qb_torrents_print || {
+        _qb_torrents_print "$filter" || {
             trap - INT
             return 1
         }
@@ -1562,6 +1642,227 @@ _qb_remove() {
         _qb_success "Removed (files deleted)"
     else
         _qb_success "Removed (files kept)"
+    fi
+}
+
+_qb_show() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local hash
+    local props
+    local files
+
+    if [[ -z "$1" || "$1" == "-h" || "$1" == "--help" ]]; then
+        printf "Usage: qb show <hash-or-name>\n"
+        return 1
+    fi
+
+    if (( $# > 1 )); then
+        _qb_line fail "Show one torrent at a time"
+        printf "Usage: qb show <hash-or-name>\n"
+        return 1
+    fi
+
+    hash="$(_qb_resolve_hashes "$1")" || return 1
+
+    props="$(_qb_api_curl "/api/v2/torrents/properties?hash=${hash}")" || {
+        _qb_failure "Failed to load torrent properties"
+        return 1
+    }
+    files="$(_qb_api_curl "/api/v2/torrents/files?hash=${hash}")" || files="[]"
+
+    python3 - "$props" "$files" "$hash" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+
+def human_bytes(n):
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "?"
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    for unit in units:
+        if n < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(n)} {unit}"
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TiB"
+
+
+def human_rate(n):
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "?"
+    if n <= 0:
+        return "0 B/s"
+    return f"{human_bytes(n)}/s"
+
+
+def fmt_ts(ts):
+    try:
+        ts = int(ts)
+    except (TypeError, ValueError):
+        return "-"
+    if ts <= 0:
+        return "-"
+    return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+
+
+try:
+    p = json.loads(sys.argv[1])
+    files = json.loads(sys.argv[2])
+except Exception as e:
+    print(f"Failed to parse response: {e}", file=sys.stderr)
+    sys.exit(1)
+
+h = sys.argv[3]
+print(p.get("name") or "unknown")
+print(f"  hash: {h}")
+print(f"  save: {p.get('save_path') or '-'}")
+print(
+    f"  size: {human_bytes(p.get('total_size') or 0)}  "
+    f"↓{human_bytes(p.get('total_downloaded') or 0)}  "
+    f"↑{human_bytes(p.get('total_uploaded') or 0)}"
+)
+print(f"  speed: ↓{human_rate(p.get('dl_speed') or 0)}  ↑{human_rate(p.get('up_speed') or 0)}")
+print(f"  peers: {p.get('peers') or 0}/{p.get('peers_total') or 0}  seeds: {p.get('seeds') or 0}/{p.get('seeds_total') or 0}")
+ratio = p.get("share_ratio")
+try:
+    ratio_s = f"{float(ratio):.3f}"
+except (TypeError, ValueError):
+    ratio_s = "-"
+print(f"  ratio: {ratio_s}  added: {fmt_ts(p.get('addition_date'))}")
+if p.get("comment"):
+    print(f"  comment: {p.get('comment')}")
+
+if not files:
+    print("  files: (none)")
+else:
+    print(f"  files ({len(files)}):")
+    for f in files[:40]:
+        prog = float(f.get("progress") or 0) * 100
+        print(f"    {prog:5.1f}%  {human_bytes(f.get('size') or 0)}  {f.get('name') or '?'}")
+    if len(files) > 40:
+        print(f"    … {len(files) - 40} more")
+PY
+}
+
+_qb_recheck() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local hashes
+
+    if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
+        printf "Usage: qb recheck <hash-or-name>…\n"
+        return 1
+    fi
+
+    hashes="$(_qb_resolve_hashes "$@")" || return 1
+
+    if ! _qb_api_post /api/v2/torrents/recheck --data-urlencode "hashes=$hashes" >/dev/null; then
+        _qb_failure "Failed to recheck torrent(s)"
+        return 1
+    fi
+
+    _qb_success "Recheck started"
+}
+
+_qb_reannounce() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local hashes
+
+    if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
+        printf "Usage: qb reannounce <hash-or-name>…\n"
+        return 1
+    fi
+
+    hashes="$(_qb_resolve_hashes "$@")" || return 1
+
+    if ! _qb_api_post /api/v2/torrents/reannounce --data-urlencode "hashes=$hashes" >/dev/null; then
+        _qb_failure "Failed to reannounce torrent(s)"
+        return 1
+    fi
+
+    _qb_success "Reannounce sent"
+}
+
+_qb_force() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local value=true
+    local -a ids=()
+    local arg
+    local hashes
+
+    for arg in "$@"; do
+        case "$arg" in
+            --off|--no)
+                value=false
+                ;;
+            -h|--help)
+                printf "Usage: qb force [--off] <hash-or-name>…\n"
+                printf "  --off  Disable force start\n"
+                return 0
+                ;;
+            *)
+                ids+=("$arg")
+                ;;
+        esac
+    done
+
+    if (( ${#ids[@]} == 0 )); then
+        _qb_line fail "No torrent id given"
+        printf "Usage: qb force [--off] <hash-or-name>…\n"
+        return 1
+    fi
+
+    hashes="$(_qb_resolve_hashes "${ids[@]}")" || return 1
+
+    if ! _qb_api_post /api/v2/torrents/setForceStart \
+        --data-urlencode "hashes=$hashes" \
+        --data-urlencode "value=$value" >/dev/null; then
+        _qb_failure "Failed to set force start"
+        return 1
+    fi
+
+    if [[ "$value" == "true" ]]; then
+        _qb_success "Force start enabled"
+    else
+        _qb_success "Force start disabled"
+    fi
+}
+
+_qb_alt() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local mode
+
+    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        printf "Usage: qb alt\n"
+        printf "  Toggle alternative global speed limits\n"
+        return 0
+    fi
+
+    if ! _qb_api_post /api/v2/transfer/toggleSpeedLimitsMode >/dev/null; then
+        _qb_failure "Failed to toggle alternative speed limits"
+        return 1
+    fi
+
+    mode="$(_qb_api_curl /api/v2/transfer/speedLimitsMode 2>/dev/null)" || mode=""
+    if [[ "$mode" == "1" ]]; then
+        _qb_success "Alternative speed limits: on"
+    else
+        _qb_success "Alternative speed limits: off"
     fi
 }
 
@@ -2172,10 +2473,15 @@ _qb_help() {
         "  qb status      Show current state" \
         "  qb torrents    List torrents (hash, progress, speeds, state)" \
         "  qb torrents --watch  Redraw torrent list every 2s" \
+        "  qb show        Show torrent details and files" \
         "  qb add         Add magnet or http(s) torrent URL" \
         "  qb pause       Pause torrent(s) by hash prefix or name" \
         "  qb resume      Resume torrent(s) by hash prefix or name" \
         "  qb remove      Remove torrent(s); --files also deletes data" \
+        "  qb recheck     Recheck torrent(s)" \
+        "  qb reannounce  Force tracker reannounce" \
+        "  qb force       Enable force start (--off to disable)" \
+        "  qb alt         Toggle alternative global speed limits" \
         "  qb logs        Follow last 50 log lines" \
         "  qb logs 200    Follow last 200 log lines" \
         "  qb shell       Enter qBittorrent container" \
@@ -2242,6 +2548,31 @@ qb() {
             _qb_remove "$@"
             ;;
 
+        show)
+            shift
+            _qb_show "$@"
+            ;;
+
+        recheck)
+            shift
+            _qb_recheck "$@"
+            ;;
+
+        reannounce)
+            shift
+            _qb_reannounce "$@"
+            ;;
+
+        force)
+            shift
+            _qb_force "$@"
+            ;;
+
+        alt)
+            shift
+            _qb_alt "$@"
+            ;;
+
         logs)
             _qb_logs "$@"
             ;;
@@ -2304,7 +2635,8 @@ _qb_complete() {
     local -a commands
 
     commands=(
-        start quit restart status torrents add pause resume remove
+        start quit restart status torrents show add pause resume remove
+        recheck reannounce force alt
         logs shell info version update images prune repair doctor layout help
     )
 

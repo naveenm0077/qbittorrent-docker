@@ -138,13 +138,18 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 | `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App unless `QB_START_UI=cli` or `qb start --cli` (idempotent; never a Safari tab). Remounts if `QB_DOWNLOADS` changed. If the local image is 90+ days old **and** a newer registry digest exists, prints a one-line suggestion to run `qb update` (does not auto-update; no nag when already latest or offline). |
 | `qb quit` | Close the WebUI app and stop qBittorrent. Docker Desktop stops only when no other containers are running (override with `QB_QUIT_DOCKER=keep`). |
 | `qb restart` | Restart qBittorrent and wait for the WebUI. |
-| `qb status` | Show Docker, container, WebUI, and other-container status. |
-| `qb torrents` | List all torrents (short hash, progress, size, speeds, state). |
+| `qb status` | Show Docker, container, WebUI, transfer speeds (when API works), and prefs. |
+| `qb torrents` | List all torrents (short hash, progress, size, speeds, state). Filters: `--downloading`, `--seeding`, `--stopped`, `--completed`, `--active`, `--errored`. |
 | `qb torrents --watch` | Redraw the torrent list every 2 seconds until Ctrl-C. |
+| `qb show <id>` | Show one torrent’s properties and file list. |
 | `qb add <magnet-or-url>` | Add a magnet link or http(s) `.torrent` URL. |
 | `qb pause <id…>` | Pause torrent(s) by hash prefix or unique name substring. |
 | `qb resume <id…>` | Resume torrent(s) by hash prefix or unique name substring. |
 | `qb remove [--files] <id…>` | Remove torrent(s); `--files` also deletes downloaded data. |
+| `qb recheck <id…>` | Recheck torrent data. |
+| `qb reannounce <id…>` | Force tracker reannounce. |
+| `qb force [--off] <id…>` | Enable (or `--off` disable) force start. |
+| `qb alt` | Toggle alternative global speed limits. |
 | `qb logs [lines]` | Follow container logs; defaults to 50 lines. |
 | `qb shell` | Open a shell in the qBittorrent container. |
 | `qb info` | Show image, container, mount, and port details. |
@@ -161,7 +166,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 
 - **Lifecycle** (`start`, `quit`, `restart`, `repair`): may change state. `start` / `restart` (when down) / `repair` can bring things up. `quit` is idempotent (finishes a partial shutdown; says already stopped if nothing is left; blocks overlapping quit spam).
 - **Diagnose** (`status`, `doctor`, `help`): read-only; OK when everything is down.
-- **Need a live stack** (`torrents`, `add`, `pause`, `resume`, `remove`, `logs`, `shell`, `info`, `version`, `update`, `layout`): fail immediately with `Run: qb start` — checks qBittorrent via `/api/v2/app/version` (uses the API key when configured).
+- **Need a live stack** (`torrents`, `show`, `add`, `pause`, `resume`, `remove`, `recheck`, `reannounce`, `force`, `alt`, `logs`, `shell`, `info`, `version`, `update`, `layout`): fail immediately with `Run: qb start` — checks qBittorrent via `/api/v2/app/version` (uses the API key when configured).
 - **Need Docker only** (`images`, `prune`): fail with `Run: qb start` if the Docker engine is down.
 
 ## WebUI column layout (optional)
