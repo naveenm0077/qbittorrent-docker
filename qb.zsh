@@ -423,8 +423,14 @@ _qb_downloads_mount_matches() {
     [[ "$src" == "$QB_DOWNLOADS" ]]
 }
 
-_qb_api_ok() {
+# Authenticated WebAPI curl. Header via process substitution so the key is
+# not on curl's argv (ps would otherwise show "Authorization: Bearer …").
+# Usage: _qb_api_curl '/api/v2/app/version'
+_qb_api_curl() {
+    local api_path="$1"
     local api_key
+
+    [[ -n "$api_path" ]] || return 1
 
     api_key="$(_qb_api_key)" || return 1
     api_key="${api_key//$'\r'/}"
@@ -434,8 +440,12 @@ _qb_api_ok() {
     [[ "$api_key" != "replace_with_your_qbittorrent_webui_api_key" ]] || return 1
 
     curl -fsS \
-    -H "Authorization: Bearer $api_key" \
-    "$QB_URL/api/v2/app/version" >/dev/null 2>&1
+        -H @<(printf 'Authorization: Bearer %s\n' "$api_key") \
+        "${QB_URL}${api_path}"
+}
+
+_qb_api_ok() {
+    _qb_api_curl /api/v2/app/version >/dev/null 2>&1
 }
 
 _qb_api_key_usable() {
@@ -526,12 +536,7 @@ _qb_container_mounts_ok() {
 }
 
 _qb_active_downloads() {
-    local api_key
-    api_key="$(_qb_api_key)" || return 1
-    
-    curl -fsS \
-    -H "Authorization: Bearer $api_key" \
-    "$QB_URL/api/v2/torrents/info?filter=downloading"
+    _qb_api_curl '/api/v2/torrents/info?filter=downloading'
 }
 
 _qb_active_download_count() {
