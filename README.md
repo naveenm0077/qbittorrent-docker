@@ -74,6 +74,16 @@ QB_QUIT_DOCKER=keep
 
 (`stop` is the default.)
 
+### Start UI (optional)
+
+By default `qb start` (and restart / repair / update) open or focus the Dock Web App. To start the stack only and print the WebUI URL:
+
+```zsh
+QB_START_UI=cli
+```
+
+For one run without changing the default: `qb start --cli` (or `qb start --app` to force the app). Flags win over the env for that invocation.
+
 Load the CLI from your `~/.zshrc`:
 
 ```zsh
@@ -109,7 +119,7 @@ qb start
 
 The WebUI is available at [http://localhost:8080](http://localhost:8080). In Safari, use **File → Add to Dock** to create the optional qBittorrent Web App wrapper.
 
-`qb start` always opens or focuses that Dock Web App (`~/Applications/qBittorrent.app`). If it is already running, it only brings it to the front — it does not open a new Safari tab for `localhost:8080`.
+`qb start` opens or focuses that Dock Web App (`~/Applications/qBittorrent.app`) when `QB_START_UI=app` (default). With `QB_START_UI=cli` or `qb start --cli`, it only prints the WebUI URL — it does not open a Safari tab.
 
 ### Docker Desktop tip (optional)
 
@@ -125,7 +135,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 
 | Command | Description |
 | --- | --- |
-| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App (idempotent; never a Safari tab). Remounts if `QB_DOWNLOADS` changed. If the local image is 90+ days old **and** a newer registry digest exists, prints a one-line suggestion to run `qb update` (does not auto-update; no nag when already latest or offline). |
+| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App unless `QB_START_UI=cli` or `qb start --cli` (idempotent; never a Safari tab). Remounts if `QB_DOWNLOADS` changed. If the local image is 90+ days old **and** a newer registry digest exists, prints a one-line suggestion to run `qb update` (does not auto-update; no nag when already latest or offline). |
 | `qb quit` | Close the WebUI app and stop qBittorrent. Docker Desktop stops only when no other containers are running (override with `QB_QUIT_DOCKER=keep`). |
 | `qb restart` | Restart qBittorrent and wait for the WebUI. |
 | `qb status` | Show Docker, container, WebUI, and other-container status. |
@@ -250,7 +260,7 @@ If automation fails, use Option A instead.
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
 | `plugins/` | Local search plugins (third-party Python — review before enabling). |
 | `webui-layout.js` | Column layout script used by `qb layout`. |
-| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_STYLE`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`. |
+| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_STYLE`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`, `QB_START_UI`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
 

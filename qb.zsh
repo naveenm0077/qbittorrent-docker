@@ -18,6 +18,8 @@ typeset -g QB_WEBUI_BIND="$QB_WEBUI_BIND_DEFAULT"
 typeset -g QB_WEBUI_PUBLISH="127.0.0.1:8080"
 QB_QUIT_DOCKER_DEFAULT="stop"
 typeset -g QB_QUIT_DOCKER="$QB_QUIT_DOCKER_DEFAULT"
+QB_START_UI_DEFAULT="app"
+typeset -g QB_START_UI="$QB_START_UI_DEFAULT"
 # Sticky: color allowed for this shell (survives $() subshells where -t 1 is false).
 typeset -g QB_COLOR_OK=0
 
@@ -522,6 +524,49 @@ _qb_refresh_quit_docker() {
     export QB_QUIT_DOCKER
 }
 
+# Load QB_START_UI from .env.qbittorrent (optional).
+# app = open/focus Dock Web App after start (default)
+# cli = leave Dock app alone; print WebUI URL
+_qb_refresh_start_ui() {
+    local configured=""
+    local line=""
+
+    if [[ -f "$QB_API_KEY_FILE" ]]; then
+        line="$(
+            grep -E '^[[:space:]]*QB_START_UI[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
+                tail -n 1
+        )"
+        configured="${line#*=}"
+        configured="${configured//$'\r'/}"
+        configured="${configured//$'\n'/}"
+        configured="${configured#"${configured%%[![:space:]]*}"}"
+        configured="${configured%"${configured##*[![:space:]]}"}"
+        configured="${configured#\"}"
+        configured="${configured%\"}"
+        configured="${configured#\'}"
+        configured="${configured%\'}"
+        configured="${configured:l}"
+    fi
+
+    if [[ -z "$configured" ]]; then
+        [[ -n "$QB_START_UI" ]] || QB_START_UI="$QB_START_UI_DEFAULT"
+    else
+        case "$configured" in
+            app|ui|gui)
+                QB_START_UI="app"
+                ;;
+            cli|none|headless)
+                QB_START_UI="cli"
+                ;;
+            *)
+                QB_START_UI="$QB_START_UI_DEFAULT"
+                ;;
+        esac
+    fi
+
+    export QB_START_UI
+}
+
 _qb_downloads_mount_matches() {
     local src
 
@@ -854,10 +899,10 @@ _qb_image_age_notice() {
     _qb_line info "Image is $days days old; newer available. Run: qb update"
 }
 
+# True if the Dock Web App process is already running.
+# Do NOT use `tell application "qBittorrent"` here — that can launch it.
 _qb_app_running() {
-    [[ "$(
-        osascript -e 'tell application "qBittorrent" to get running' 2>/dev/null
-    )" == "true" ]]
+    pgrep -f "/Applications/qBittorrent.app" >/dev/null 2>&1
 }
 
 _qb_open_app() {
@@ -887,6 +932,19 @@ _qb_open_app() {
     return 1
 }
 
+# Present WebUI per QB_START_UI: open Dock app (app) or print URL only (cli).
+_qb_present_webui() {
+    _qb_refresh_start_ui
+
+    if [[ "$QB_START_UI" == "cli" ]]; then
+        _qb_line info "Skipping Dock Web App (QB_START_UI=cli)"
+        _qb_line info "WebUI: $QB_URL"
+        return 0
+    fi
+
+    _qb_open_app
+}
+
 _qb_close_app() {
     if _qb_app_running; then
         if osascript -e 'tell application "qBittorrent" to quit' >/dev/null 2>&1; then
@@ -903,6 +961,31 @@ _qb_close_app() {
 _qb_start() {
     _qb_refresh_downloads
     _qb_refresh_webui_bind
+    _qb_refresh_start_ui
+
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --cli|cli)
+                QB_START_UI="cli"
+                ;;
+            --app|app)
+                QB_START_UI="app"
+                ;;
+            -h|--help)
+                printf "Usage: qb start [--cli|--app|cli|app]\n"
+                printf "  --cli / cli  Start stack only; do not open Dock Web App\n"
+                printf "  --app / app  Open/focus Dock Web App (default)\n"
+                printf "Env default: QB_START_UI=app|cli (flags win)\n"
+                return 0
+                ;;
+            *)
+                _qb_line fail "Unknown option: $arg"
+                printf "Usage: qb start [--cli|--app|cli|app]\n"
+                return 1
+                ;;
+        esac
+    done
 
     if ! _qb_docker_running; then
         _qb_spinner "Starting Docker Desktop..."
@@ -973,7 +1056,7 @@ _qb_start() {
 
     _qb_image_age_notice
 
-    _qb_open_app
+    _qb_present_webui
 }
 
 _qb_quit() {
@@ -1073,6 +1156,7 @@ _qb_quit() {
 _qb_restart() {
     _qb_refresh_downloads
     _qb_refresh_webui_bind
+    _qb_refresh_start_ui
 
     if _qb_container_running; then
         cd "$QB_DIR" || {
@@ -1098,7 +1182,7 @@ _qb_restart() {
         
         _qb_success "WebUI ready"
         
-        _qb_open_app
+        _qb_present_webui
         return $?
     fi
     
@@ -1144,7 +1228,16 @@ _qb_status() {
 
     _qb_line info "Output style: $QB_STYLE"
     _qb_line info "WebUI bind: $QB_WEBUI_BIND"
-    _qb_line info "Quit Docker: $QB_QUIT_DOCKER"
+    if [[ "$QB_QUIT_DOCKER" == "keep" ]]; then
+        _qb_line info "On quit: leave Docker Desktop running"
+    else
+        _qb_line info "On quit: stop Docker Desktop if idle"
+    fi
+    if [[ "$QB_START_UI" == "cli" ]]; then
+        _qb_line info "On start: CLI only (no Dock Web App)"
+    else
+        _qb_line info "On start: open Dock Web App"
+    fi
 }
 
 _qb_torrents() {
@@ -1242,6 +1335,7 @@ _qb_update() {
     _qb_require_api || return 1
     _qb_refresh_downloads
     _qb_refresh_webui_bind
+    _qb_refresh_start_ui
 
     cd "$QB_DIR" || {
         _qb_failure "qBittorrent directory not found"
@@ -1341,7 +1435,7 @@ _qb_update() {
         _qb_line off "Previous image left in place (in use or already gone)"
     fi
 
-    _qb_open_app
+    _qb_present_webui
 }
 
 _qb_images() {
@@ -1540,6 +1634,7 @@ _qb_prune() {
 _qb_repair() {
     _qb_refresh_downloads
     _qb_refresh_webui_bind
+    _qb_refresh_start_ui
 
     if ! _qb_docker_running; then
         _qb_spinner "Starting Docker Desktop..."
@@ -1615,7 +1710,7 @@ _qb_repair() {
     
     _qb_success "WebUI ready"
     
-    _qb_open_app
+    _qb_present_webui
 }
 
 _qb_doctor() {
@@ -1781,7 +1876,8 @@ _qb_help() {
     printf '%s\n' \
         "Usage:" \
         "" \
-        "  qb start       Start Docker + qBittorrent + open/focus WebUI app" \
+        "  qb start       Start Docker + qBittorrent; open Dock app unless QB_START_UI=cli" \
+        "  qb start --cli Start stack only; do not open Dock Web App" \
         "  qb quit        Stop qBittorrent; stop Docker Desktop if nothing else is running" \
         "  qb restart     Restart qBittorrent" \
         "  qb status      Show current state" \
@@ -1806,11 +1902,13 @@ qb() {
     _qb_refresh_downloads
     _qb_refresh_webui_bind
     _qb_refresh_quit_docker
+    _qb_refresh_start_ui
     _qb_update_color_ok
 
     case "$1" in
         start)
-            _qb_start
+            shift
+            _qb_start "$@"
             ;;
 
         quit)
@@ -1908,4 +2006,5 @@ _qb_refresh_style
 _qb_refresh_downloads
 _qb_refresh_webui_bind
 _qb_refresh_quit_docker
+_qb_refresh_start_ui
 _qb_update_color_ok
