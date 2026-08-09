@@ -11,7 +11,7 @@ services:
 
     volumes:
       - ./config:/config
-      - ${HOME}/Downloads/qbittorrent-downloads:/downloads
+      - ${QB_DOWNLOADS:-${HOME}/Downloads/qbittorrent-downloads}:/downloads
       - ./plugins:/plugins
 
     ports:

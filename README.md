@@ -2,7 +2,7 @@
 
 Dockerized qBittorrent with a Zsh CLI for macOS.
 
-The qBittorrent service runs in Docker, stores downloads in `~/Downloads/qbittorrent-downloads`, and is managed with the `qb` command. A Safari Web App can be used as a local desktop wrapper for the WebUI.
+The qBittorrent service runs in Docker, stores downloads in `~/Downloads/qbittorrent-downloads` by default, and is managed with the `qb` command. A Safari Web App can be used as a local desktop wrapper for the WebUI.
 
 ## Requirements
 
@@ -29,6 +29,16 @@ Set `QBIT_API_KEY` in `.env.qbittorrent` to your WebUI API key:
 4. Paste it into `.env.qbittorrent` as `QBIT_API_KEY=...` and save.
 
 This file is ignored by Git. Commands like `qb torrents` and `qb update` need a valid key; if it is missing or wrong they print where to fix it.
+
+### Custom download folder (optional)
+
+By default downloads go to `~/Downloads/qbittorrent-downloads`. To use another host folder, set `QB_DOWNLOADS` in the same `.env.qbittorrent` file:
+
+```zsh
+QB_DOWNLOADS=/Volumes/Storage/torrents
+```
+
+`~` is expanded. You do not need this variable for the default path. After changing it, run `qb start` (recreates the container only if the mount differs) or `qb repair`.
 
 Load the CLI from your `~/.zshrc`:
 
@@ -81,7 +91,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 
 | Command | Description |
 | --- | --- |
-| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App (idempotent; never a Safari tab). If the local image is 60+ days old, prints a one-line suggestion to run `qb update` (does not auto-update). |
+| `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App (idempotent; never a Safari tab). Remounts if `QB_DOWNLOADS` changed. If the local image is 60+ days old, prints a one-line suggestion to run `qb update` (does not auto-update). |
 | `qb quit` | Close the WebUI app and stop qBittorrent. Docker Desktop stops only when no other containers are running. |
 | `qb restart` | Restart qBittorrent and wait for the WebUI. |
 | `qb status` | Show Docker, container, WebUI, and other-container status. |
@@ -203,10 +213,10 @@ If automation fails, use Option A instead.
 | `compose.yaml` | qBittorrent Docker service definition. |
 | `qb.zsh` | `qb` CLI commands. |
 | `config/` | Persistent qBittorrent configuration and session state. |
-| `~/Downloads/qbittorrent-downloads` | Downloaded and incomplete torrent data. |
+| `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
 | `plugins/` | Local qBittorrent search plugins. |
 | `webui-layout.js` | Column layout script used by `qb layout`. |
-| `.env.qbittorrent` | Local WebUI API key for CLI requests. |
+| `.env.qbittorrent` | Local WebUI API key and optional `QB_DOWNLOADS`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
 

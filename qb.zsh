@@ -4,7 +4,8 @@
 emulate -L zsh
 
 QB_DIR="$HOME/qbittorrent"
-QB_DOWNLOADS="$HOME/Downloads/qbittorrent-downloads"
+QB_DOWNLOADS_DEFAULT="$HOME/Downloads/qbittorrent-downloads"
+QB_DOWNLOADS="$QB_DOWNLOADS_DEFAULT"
 QB_APP="$HOME/Applications/qBittorrent.app"
 QB_URL="http://localhost:8080"
 QB_API_KEY_FILE="$QB_DIR/.env.qbittorrent"
@@ -142,9 +143,78 @@ _qb_wait_for_webui() {
 }
 
 _qb_api_key() {
+    local key
+
     [[ -f "$QB_API_KEY_FILE" ]] || return 1
-    
-    sed 's/^QBIT_API_KEY=//' "$QB_API_KEY_FILE"
+
+    key="$(
+        grep -E '^QBIT_API_KEY=' "$QB_API_KEY_FILE" 2>/dev/null |
+            tail -n 1 |
+            sed 's/^QBIT_API_KEY=//'
+    )"
+    key="${key//$'\r'/}"
+    key="${key//$'\n'/}"
+    key="${key#\"}"
+    key="${key%\"}"
+    key="${key#\'}"
+    key="${key%\'}"
+
+    [[ -n "$key" ]] || return 1
+    printf '%s\n' "$key"
+}
+
+# Load QB_DOWNLOADS from .env.qbittorrent (optional) and export for compose.
+_qb_refresh_downloads() {
+    local configured=""
+
+    if [[ -f "$QB_API_KEY_FILE" ]]; then
+        configured="$(
+            grep -E '^QB_DOWNLOADS=' "$QB_API_KEY_FILE" 2>/dev/null |
+                tail -n 1 |
+                sed 's/^QB_DOWNLOADS=//'
+        )"
+        configured="${configured//$'\r'/}"
+        configured="${configured//$'\n'/}"
+        configured="${configured#\"}"
+        configured="${configured%\"}"
+        configured="${configured#\'}"
+        configured="${configured%\'}"
+    fi
+
+    if [[ -z "$configured" ]]; then
+        QB_DOWNLOADS="$QB_DOWNLOADS_DEFAULT"
+    elif [[ "$configured" == "~" ]]; then
+        QB_DOWNLOADS="$HOME"
+    elif [[ "$configured" == "~/"* ]]; then
+        QB_DOWNLOADS="$HOME/${configured#~/}"
+    else
+        QB_DOWNLOADS="$configured"
+    fi
+
+    if [[ -d "$QB_DOWNLOADS" ]]; then
+        QB_DOWNLOADS="${QB_DOWNLOADS:A}"
+    fi
+
+    export QB_DOWNLOADS
+}
+
+_qb_downloads_mount_matches() {
+    local src
+
+    _qb_container_exists || return 1
+
+    src="$(
+        docker inspect qbittorrent \
+            --format '{{range .Mounts}}{{if eq .Destination "/downloads"}}{{.Source}}{{end}}{{end}}' \
+            2>/dev/null
+    )"
+    [[ -n "$src" ]] || return 1
+
+    if [[ -d "$src" ]]; then
+        src="${src:A}"
+    fi
+
+    [[ "$src" == "$QB_DOWNLOADS" ]]
 }
 
 _qb_api_ok() {
@@ -472,6 +542,8 @@ _qb_close_app() {
 }
 
 _qb_start() {
+    _qb_refresh_downloads
+
     if ! _qb_docker_running; then
         _qb_spinner "Starting Docker Desktop..."
         
@@ -503,6 +575,26 @@ _qb_start() {
         fi
         
         _qb_success "qBittorrent started"
+    elif ! _qb_downloads_mount_matches; then
+        cd "$QB_DIR" || {
+            _qb_failure "qBittorrent directory not found"
+            return 1
+        }
+
+        mkdir -p "$QB_DOWNLOADS" || {
+            _qb_failure "Failed to create downloads directory"
+            return 1
+        }
+
+        _qb_spinner "Updating downloads mount..."
+
+        if ! docker compose up -d --force-recreate >/dev/null 2>&1; then
+            _qb_failure "Failed to update downloads mount"
+            return 1
+        fi
+
+        _qb_success "Downloads mount updated"
+        printf "→ Host path: %s\n" "$QB_DOWNLOADS"
     fi
     
     if ! _qb_webui_ready; then
@@ -524,6 +616,8 @@ _qb_start() {
 }
 
 _qb_quit() {
+    _qb_refresh_downloads
+
     if ! _qb_quit_lock_acquire; then
         return 0
     fi
@@ -606,6 +700,8 @@ _qb_quit() {
 }
 
 _qb_restart() {
+    _qb_refresh_downloads
+
     if _qb_container_running; then
         cd "$QB_DIR" || {
             _qb_failure "qBittorrent directory not found"
@@ -768,6 +864,7 @@ _qb_version() {
 _qb_update() {
     _qb_require_stack || return 1
     _qb_require_api || return 1
+    _qb_refresh_downloads
 
     cd "$QB_DIR" || {
         _qb_failure "qBittorrent directory not found"
@@ -1065,6 +1162,8 @@ _qb_prune() {
 }
 
 _qb_repair() {
+    _qb_refresh_downloads
+
     if ! _qb_docker_running; then
         _qb_spinner "Starting Docker Desktop..."
         
@@ -1205,9 +1304,9 @@ _qb_doctor() {
     fi
     
     if [[ -d "$QB_DOWNLOADS" ]]; then
-        printf "✓ Downloads directory: present\n"
+        printf "✓ Downloads directory: %s\n" "$QB_DOWNLOADS"
     else
-        printf "✗ Downloads directory: missing\n"
+        printf "✗ Downloads directory missing: %s\n" "$QB_DOWNLOADS"
         issues=1
     fi
     
@@ -1326,6 +1425,8 @@ _qb_help() {
 qb() {
     emulate -L zsh
 
+    _qb_refresh_downloads
+
     case "$1" in
         start)
             _qb_start
@@ -1421,3 +1522,5 @@ _qb_complete() {
 if (( $+functions[compdef] )); then
     compdef _qb_complete qb
 fi
+
+_qb_refresh_downloads
