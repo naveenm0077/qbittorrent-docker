@@ -626,6 +626,28 @@ _qb_api_curl() {
         "${QB_URL}${api_path}"
 }
 
+# Authenticated WebAPI POST (form fields via extra curl args, e.g. --data-urlencode).
+# Usage: _qb_api_post '/api/v2/torrents/stop' --data-urlencode "hashes=abc"
+_qb_api_post() {
+    local api_path="$1"
+    local api_key
+    shift
+
+    [[ -n "$api_path" ]] || return 1
+
+    api_key="$(_qb_api_key)" || return 1
+    api_key="${api_key//$'\r'/}"
+    api_key="${api_key//$'\n'/}"
+
+    [[ -n "$api_key" ]] || return 1
+    [[ "$api_key" != "replace_with_your_qbittorrent_webui_api_key" ]] || return 1
+
+    curl -fsS -X POST \
+        -H @<(printf 'Authorization: Bearer %s\n' "$api_key") \
+        "$@" \
+        "${QB_URL}${api_path}"
+}
+
 _qb_api_ok() {
     _qb_api_curl /api/v2/app/version >/dev/null 2>&1
 }
@@ -719,6 +741,10 @@ _qb_container_mounts_ok() {
 
 _qb_active_downloads() {
     _qb_api_curl '/api/v2/torrents/info?filter=downloading'
+}
+
+_qb_torrents_info() {
+    _qb_api_curl '/api/v2/torrents/info'
 }
 
 _qb_active_download_count() {
@@ -1240,40 +1266,303 @@ _qb_status() {
     fi
 }
 
-_qb_torrents() {
-    _qb_require_stack || return 1
-    _qb_require_api || return 1
-
+_qb_torrents_print() {
     local response
-    response="$(_qb_active_downloads)" || {
+
+    response="$(_qb_torrents_info)" || {
         _qb_failure "Failed to query qBittorrent"
         return 1
     }
-    
+
     python3 - "$response" <<'PY'
+import json
+import sys
+
+
+def human_bytes(n):
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "?"
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    for unit in units:
+        if n < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(n)} {unit}"
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TiB"
+
+
+def human_rate(n):
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "?"
+    if n <= 0:
+        return "0 B/s"
+    return f"{human_bytes(n)}/s"
+
+
+try:
+    torrents = json.loads(sys.argv[1])
+except Exception as e:
+    print(f"Failed to parse qBittorrent response: {e}", file=sys.stderr)
+    sys.exit(1)
+
+if not torrents:
+    print("No torrents.")
+    sys.exit(0)
+
+for t in torrents:
+    name = t.get("name") or "unknown"
+    state = t.get("state") or "unknown"
+    progress = float(t.get("progress") or 0) * 100
+    size = human_bytes(t.get("size") or 0)
+    dlspeed = human_rate(t.get("dlspeed") or 0)
+    upspeed = human_rate(t.get("upspeed") or 0)
+    h = (t.get("hash") or "")[:8]
+    print(name)
+    print(f"  {h}  {progress:5.1f}%  {size}  ↓{dlspeed}  ↑{upspeed}  {state}")
+PY
+}
+
+# Resolve id args (hash prefix or unique name substring) to full hashes (| joined).
+_qb_resolve_hashes() {
+    local response
+    local resolved
+
+    (( $# > 0 )) || {
+        _qb_line fail "No torrent id given"
+        return 1
+    }
+
+    response="$(_qb_torrents_info)" || {
+        _qb_failure "Failed to query qBittorrent"
+        return 1
+    }
+
+    resolved="$(
+        python3 - "$response" "$@" <<'PY'
 import json
 import sys
 
 try:
     torrents = json.loads(sys.argv[1])
-
-    if not torrents:
-        print("No active downloads.")
-        sys.exit(0)
-
-    for torrent in torrents:
-        speed = torrent.get("dlspeed", 0) / 1024 / 1024
-        progress = torrent.get("progress", 0) * 100
-        state = torrent.get("state", "unknown")
-        name = torrent.get("name", "unknown")
-
-        print(name)
-        print(f"  {progress:.2f}% | {speed:.2f} MiB/s | {state}")
-
 except Exception as e:
-    print(f"Failed to parse qBittorrent response: {e}", file=sys.stderr)
-    sys.exit(1)
+    print(f"Failed to parse torrent list: {e}", file=sys.stderr)
+    sys.exit(2)
+
+queries = sys.argv[2:]
+hashes = []
+
+for q in queries:
+    ql = q.lower()
+    matches = []
+    for t in torrents:
+        h = (t.get("hash") or "").lower()
+        name = (t.get("name") or "").lower()
+        if h.startswith(ql) or ql in name:
+            matches.append(t)
+
+    # Prefer exact hash match when present.
+    exact = [t for t in matches if (t.get("hash") or "").lower() == ql]
+    if len(exact) == 1:
+        matches = exact
+
+    if not matches:
+        print(f"No torrent matches: {q}", file=sys.stderr)
+        sys.exit(1)
+
+    # Unique by hash.
+    by_hash = {}
+    for t in matches:
+        by_hash[(t.get("hash") or "").lower()] = t
+    uniq = list(by_hash.values())
+
+    if len(uniq) > 1:
+        print(f"Ambiguous id: {q}", file=sys.stderr)
+        for t in uniq:
+            h = (t.get("hash") or "")[:8]
+            print(f"  {h}  {t.get('name') or 'unknown'}", file=sys.stderr)
+        sys.exit(1)
+
+    hashes.append(uniq[0].get("hash") or "")
+
+print("|".join(hashes))
 PY
+    )" || return 1
+
+    [[ -n "$resolved" ]] || return 1
+    printf '%s\n' "$resolved"
+}
+
+_qb_torrents() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local watch=0
+    local arg
+
+    for arg in "$@"; do
+        case "$arg" in
+            --watch|-w)
+                watch=1
+                ;;
+            -h|--help)
+                printf "Usage: qb torrents [--watch]\n"
+                printf "  --watch / -w  Redraw list every 2s until Ctrl-C\n"
+                return 0
+                ;;
+            *)
+                _qb_line fail "Unknown option: $arg"
+                printf "Usage: qb torrents [--watch]\n"
+                return 1
+                ;;
+        esac
+    done
+
+    if (( ! watch )); then
+        _qb_torrents_print
+        return $?
+    fi
+
+    trap 'break' INT
+    while true; do
+        printf '\033[H\033[2J'
+        _qb_torrents_print || {
+            trap - INT
+            return 1
+        }
+        _qb_line info "Watching (Ctrl-C to stop)"
+        sleep 2
+    done
+    trap - INT
+    printf '\n'
+    return 0
+}
+
+_qb_add() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local url="$1"
+
+    if [[ -z "$url" || "$url" == "-h" || "$url" == "--help" ]]; then
+        printf "Usage: qb add <magnet-or-url>\n"
+        return 1
+    fi
+
+    if (( $# > 1 )); then
+        _qb_line fail "Pass a single magnet or http(s) URL"
+        printf "Usage: qb add <magnet-or-url>\n"
+        return 1
+    fi
+
+    case "$url" in
+        magnet:*|http://*|https://*)
+            ;;
+        *)
+            _qb_line fail "Expected magnet: or http(s) URL"
+            return 1
+            ;;
+    esac
+
+    if ! _qb_api_post /api/v2/torrents/add --data-urlencode "urls=$url" >/dev/null; then
+        _qb_failure "Failed to add torrent"
+        return 1
+    fi
+
+    _qb_success "Torrent added"
+}
+
+_qb_pause() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local hashes
+
+    if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
+        printf "Usage: qb pause <hash-or-name>…\n"
+        return 1
+    fi
+
+    hashes="$(_qb_resolve_hashes "$@")" || return 1
+
+    if ! _qb_api_post /api/v2/torrents/stop --data-urlencode "hashes=$hashes" >/dev/null; then
+        _qb_failure "Failed to pause torrent(s)"
+        return 1
+    fi
+
+    _qb_success "Paused"
+}
+
+_qb_resume() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local hashes
+
+    if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
+        printf "Usage: qb resume <hash-or-name>…\n"
+        return 1
+    fi
+
+    hashes="$(_qb_resolve_hashes "$@")" || return 1
+
+    if ! _qb_api_post /api/v2/torrents/start --data-urlencode "hashes=$hashes" >/dev/null; then
+        _qb_failure "Failed to resume torrent(s)"
+        return 1
+    fi
+
+    _qb_success "Resumed"
+}
+
+_qb_remove() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
+    local delete_files=false
+    local -a ids=()
+    local arg
+    local hashes
+
+    for arg in "$@"; do
+        case "$arg" in
+            --files)
+                delete_files=true
+                ;;
+            -h|--help)
+                printf "Usage: qb remove [--files] <hash-or-name>…\n"
+                printf "  --files  Also delete downloaded files from disk\n"
+                return 0
+                ;;
+            *)
+                ids+=("$arg")
+                ;;
+        esac
+    done
+
+    if (( ${#ids[@]} == 0 )); then
+        _qb_line fail "No torrent id given"
+        printf "Usage: qb remove [--files] <hash-or-name>…\n"
+        return 1
+    fi
+
+    hashes="$(_qb_resolve_hashes "${ids[@]}")" || return 1
+
+    if ! _qb_api_post /api/v2/torrents/delete \
+        --data-urlencode "hashes=$hashes" \
+        --data-urlencode "deleteFiles=$delete_files" >/dev/null; then
+        _qb_failure "Failed to remove torrent(s)"
+        return 1
+    fi
+
+    if [[ "$delete_files" == "true" ]]; then
+        _qb_success "Removed (files deleted)"
+    else
+        _qb_success "Removed (files kept)"
+    fi
 }
 
 _qb_logs() {
@@ -1881,7 +2170,12 @@ _qb_help() {
         "  qb quit        Stop qBittorrent; stop Docker Desktop if nothing else is running" \
         "  qb restart     Restart qBittorrent" \
         "  qb status      Show current state" \
-        "  qb torrents    Show active downloads" \
+        "  qb torrents    List torrents (hash, progress, speeds, state)" \
+        "  qb torrents --watch  Redraw torrent list every 2s" \
+        "  qb add         Add magnet or http(s) torrent URL" \
+        "  qb pause       Pause torrent(s) by hash prefix or name" \
+        "  qb resume      Resume torrent(s) by hash prefix or name" \
+        "  qb remove      Remove torrent(s); --files also deletes data" \
         "  qb logs        Follow last 50 log lines" \
         "  qb logs 200    Follow last 200 log lines" \
         "  qb shell       Enter qBittorrent container" \
@@ -1924,7 +2218,28 @@ qb() {
             ;;
 
         torrents)
-            _qb_torrents
+            shift
+            _qb_torrents "$@"
+            ;;
+
+        add)
+            shift
+            _qb_add "$@"
+            ;;
+
+        pause)
+            shift
+            _qb_pause "$@"
+            ;;
+
+        resume)
+            shift
+            _qb_resume "$@"
+            ;;
+
+        remove)
+            shift
+            _qb_remove "$@"
             ;;
 
         logs)
@@ -1989,8 +2304,8 @@ _qb_complete() {
     local -a commands
 
     commands=(
-        start quit restart status torrents logs shell
-        info version update images prune repair doctor layout help
+        start quit restart status torrents add pause resume remove
+        logs shell info version update images prune repair doctor layout help
     )
 
     if (( CURRENT == 2 )); then

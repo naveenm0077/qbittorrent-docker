@@ -139,7 +139,12 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 | `qb quit` | Close the WebUI app and stop qBittorrent. Docker Desktop stops only when no other containers are running (override with `QB_QUIT_DOCKER=keep`). |
 | `qb restart` | Restart qBittorrent and wait for the WebUI. |
 | `qb status` | Show Docker, container, WebUI, and other-container status. |
-| `qb torrents` | List active downloads. |
+| `qb torrents` | List all torrents (short hash, progress, size, speeds, state). |
+| `qb torrents --watch` | Redraw the torrent list every 2 seconds until Ctrl-C. |
+| `qb add <magnet-or-url>` | Add a magnet link or http(s) `.torrent` URL. |
+| `qb pause <id…>` | Pause torrent(s) by hash prefix or unique name substring. |
+| `qb resume <id…>` | Resume torrent(s) by hash prefix or unique name substring. |
+| `qb remove [--files] <id…>` | Remove torrent(s); `--files` also deletes downloaded data. |
 | `qb logs [lines]` | Follow container logs; defaults to 50 lines. |
 | `qb shell` | Open a shell in the qBittorrent container. |
 | `qb info` | Show image, container, mount, and port details. |
@@ -156,7 +161,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 
 - **Lifecycle** (`start`, `quit`, `restart`, `repair`): may change state. `start` / `restart` (when down) / `repair` can bring things up. `quit` is idempotent (finishes a partial shutdown; says already stopped if nothing is left; blocks overlapping quit spam).
 - **Diagnose** (`status`, `doctor`, `help`): read-only; OK when everything is down.
-- **Need a live stack** (`torrents`, `logs`, `shell`, `info`, `version`, `update`, `layout`): fail immediately with `Run: qb start` — checks qBittorrent via `/api/v2/app/version` (uses the API key when configured).
+- **Need a live stack** (`torrents`, `add`, `pause`, `resume`, `remove`, `logs`, `shell`, `info`, `version`, `update`, `layout`): fail immediately with `Run: qb start` — checks qBittorrent via `/api/v2/app/version` (uses the API key when configured).
 - **Need Docker only** (`images`, `prune`): fail with `Run: qb start` if the Docker engine is down.
 
 ## WebUI column layout (optional)
