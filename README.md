@@ -116,42 +116,25 @@ Anything else in `allColumns` is explicitly hidden by that starter layout.
 
 WebUI column ids used in `allColumns` / `wanted` (labels can vary slightly by qBittorrent version):
 
-| Code key | Typical WebUI label |
-| --- | --- |
-| `priority` | # / Priority |
-| `state_icon` | Status icon |
-| `name` | Name |
-| `size` | Size |
-| `total_size` | Total Size |
-| `progress` | Progress |
-| `status` | Status |
-| `num_seeds` | Seeds |
-| `num_leechs` | Peers |
-| `dlspeed` | Down Speed |
-| `upspeed` | Up Speed |
-| `downloaded` | Downloaded |
-| `uploaded` | Uploaded |
-| `amount_left` | Remaining |
-| `eta` | ETA |
-| `ratio` | Ratio |
-| `popularity` | Popularity |
-| `category` | Category |
-| `tags` | Tags |
-| `added_on` | Added On |
-| `completion_on` | Completed On |
-| `creation_date` | Creation Date |
-| `tracker` | Tracker |
-| `save_path` | Save Path |
-| `download_limit` | Down Limit |
-| `upload_limit` | Up Limit |
-| `downloaded_session` | Session Download |
-| `uploaded_session` | Session Upload |
-| `time_active` | Time Active |
-| `seeding_time` | Seeding Time |
-| `seen_complete` | Seen Complete |
-| `last_activity` | Last Activity |
-| `availability` | Availability |
-| `last_seen_complete` | Last Seen Complete |
+| Code key | Typical WebUI label | Code key | Typical WebUI label |
+| --- | --- | --- | --- |
+| `priority` | # / Priority | `category` | Category |
+| `state_icon` | Status icon | `tags` | Tags |
+| `name` | Name | `added_on` | Added On |
+| `size` | Size | `completion_on` | Completed On |
+| `total_size` | Total Size | `creation_date` | Creation Date |
+| `progress` | Progress | `tracker` | Tracker |
+| `status` | Status | `save_path` | Save Path |
+| `num_seeds` | Seeds | `download_limit` | Down Limit |
+| `num_leechs` | Peers | `upload_limit` | Up Limit |
+| `dlspeed` | Down Speed | `downloaded_session` | Session Download |
+| `upspeed` | Up Speed | `uploaded_session` | Session Upload |
+| `downloaded` | Downloaded | `time_active` | Time Active |
+| `uploaded` | Uploaded | `seeding_time` | Seeding Time |
+| `amount_left` | Remaining | `seen_complete` | Seen Complete |
+| `eta` | ETA | `last_activity` | Last Activity |
+| `ratio` | Ratio | `availability` | Availability |
+| `popularity` | Popularity | `last_seen_complete` | Last Seen Complete |
 
 ### Option A — Console paste (recommended)
 
