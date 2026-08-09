@@ -83,8 +83,9 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 | `qb shell` | Open a shell in the qBittorrent container. |
 | `qb info` | Show image, container, mount, and port details. |
 | `qb version` | Show the running qBittorrent version. |
-| `qb update` | Pull the latest image when no downloads are active; recreate only if the image changed. |
+| `qb update` | Pull the latest image when no downloads are active; recreate only if the image changed; remove the previous image afterward when safe. |
 | `qb images` | List local qBittorrent images (including dangling) with sizes and a unique total. |
+| `qb prune` | Remove unused local qBittorrent images; always keeps the image currently used by the container/compose service. |
 | `qb repair` | Recreate the qBittorrent container without touching downloads or configuration. |
 | `qb doctor` | Check Docker, container, WebUI, mounts, API auth, port 8080, and local directories. |
 | `qb layout` | Optional one-shot helper to apply the torrent table column layout (see below). |

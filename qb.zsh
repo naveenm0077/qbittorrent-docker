@@ -187,6 +187,48 @@ _qb_image_id() {
     docker image inspect "$image" --format '{{.Id}}' 2>/dev/null
 }
 
+_qb_image_ids_equal() {
+    local left="${1#sha256:}"
+    local right="${2#sha256:}"
+
+    [[ -n "$left" && -n "$right" ]] || return 1
+    [[ "$left" == "$right" || "$left" == "$right"* || "$right" == "$left"* ]]
+}
+
+_qb_short_image_id() {
+    local id="${1#sha256:}"
+
+    printf '%s\n' "${id:0:12}"
+}
+
+# Best-effort removal. Never treat failure as fatal for callers.
+_qb_remove_image_id() {
+    local image_id="$1"
+
+    [[ -n "$image_id" ]] || return 1
+
+    docker rmi "$image_id" >/dev/null 2>&1
+}
+
+_qb_kept_image_id() {
+    local image
+    local image_id
+
+    if _qb_container_exists; then
+        image_id="$(
+            docker inspect qbittorrent --format '{{.Image}}' 2>/dev/null
+        )"
+        if [[ -n "$image_id" ]]; then
+            printf '%s\n' "$image_id"
+            return 0
+        fi
+    fi
+
+    cd "$QB_DIR" 2>/dev/null || return 1
+    image="$(_qb_service_image)" || return 1
+    _qb_image_id "$image"
+}
+
 _qb_app_running() {
     [[ "$(
         osascript -e 'tell application "qBittorrent" to get running' 2>/dev/null
@@ -595,7 +637,13 @@ _qb_update() {
     fi
     
     _qb_success "WebUI ready"
-    
+
+    if _qb_remove_image_id "$old_id"; then
+        printf "✓ Removed previous image %s\n" "$(_qb_short_image_id "$old_id")"
+    else
+        printf "○ Previous image left in place (in use or already gone)\n"
+    fi
+
     _qb_open_app
 }
 
@@ -745,6 +793,60 @@ print(f"Total:  {human(total)}")
 print()
 print("Note: sizes are per-image logical size; shared layers may mean less disk than the sum.")
 PY
+}
+
+_qb_prune() {
+    local keep_id
+    local image_id
+    local removed=0
+    local skipped=0
+    local -a candidates
+    local -A seen
+
+    if ! _qb_docker_running; then
+        _qb_failure "Docker Desktop is not running"
+        printf "Run: qb start\n"
+        return 1
+    fi
+
+    keep_id="$(_qb_kept_image_id)" || {
+        _qb_failure "Failed to resolve the image to keep"
+        return 1
+    }
+
+    candidates=("${(@f)$(
+        docker images \
+            --filter 'reference=*qbittorrent*' \
+            --format '{{.ID}}' 2>/dev/null
+    )}")
+
+    for image_id in "${candidates[@]}"; do
+        [[ -n "$image_id" ]] || continue
+        [[ -n "${seen[$image_id]}" ]] && continue
+        seen[$image_id]=1
+
+        if _qb_image_ids_equal "$image_id" "$keep_id"; then
+            skipped=$((skipped + 1))
+            continue
+        fi
+
+        if _qb_remove_image_id "$image_id"; then
+            printf "✓ Removed %s\n" "$(_qb_short_image_id "$image_id")"
+            removed=$((removed + 1))
+        else
+            printf "○ Skipped %s (in use or already gone)\n" \
+                "$(_qb_short_image_id "$image_id")"
+            skipped=$((skipped + 1))
+        fi
+    done
+
+    if (( removed == 0 && skipped == 0 )); then
+        printf "✓ No leftover qBittorrent images to prune\n"
+        return 0
+    fi
+
+    printf "✓ Prune finished (removed %s, kept/skipped %s)\n" "$removed" "$skipped"
+    printf "→ Keeping active image %s\n" "$(_qb_short_image_id "$keep_id")"
 }
 
 _qb_repair() {
@@ -990,8 +1092,9 @@ _qb_help() {
         "  qb shell       Enter qBittorrent container" \
         "  qb info        Show container details" \
         "  qb version     Show qBittorrent version" \
-        "  qb update      Pull newer image when idle; recreate only if changed" \
+        "  qb update      Pull newer image when idle; recreate only if changed; drop old image" \
         "  qb images      Show local qBittorrent images and disk use" \
+        "  qb prune       Remove unused local qBittorrent images (keeps the active one)" \
         "  qb repair      Recreate a broken qBittorrent container" \
         "  qb doctor      Diagnose Docker, mounts, API, port, and local dirs" \
         "  qb layout      Optional: apply WebUI column layout (needs Safari Apple Events JS; see README)"
@@ -1045,6 +1148,10 @@ qb() {
             _qb_images
             ;;
 
+        prune)
+            _qb_prune
+            ;;
+
         repair)
             _qb_repair
             ;;
@@ -1080,7 +1187,7 @@ _qb_complete() {
 
     commands=(
         start quit restart status torrents logs shell
-        info version update images repair doctor layout help
+        info version update images prune repair doctor layout help
     )
 
     if (( CURRENT == 2 )); then
