@@ -11,6 +11,9 @@ plugins/
 # Leftover project-local downloads folder from older setups
 downloads/
 
+# Quit-in-progress lock dir (atomic mkdir)
+.qb-quit.lock/
+
 # Local backups and macOS metadata
 *.backup
 .DS_Store

@@ -10,12 +10,14 @@ QB_APP="$HOME/Applications/qBittorrent.app"
 QB_URL="http://localhost:8080"
 QB_API_KEY_FILE="$QB_DIR/.env.qbittorrent"
 QB_IMAGE_STALE_DAYS=90
-QB_QUIT_LOCK="/tmp/qb-quit.lock"
+QB_QUIT_LOCK="$QB_DIR/.qb-quit.lock"
 QB_STYLE_DEFAULT="color"
 typeset -g QB_STYLE="$QB_STYLE_DEFAULT"
 QB_WEBUI_BIND_DEFAULT="localhost"
 typeset -g QB_WEBUI_BIND="$QB_WEBUI_BIND_DEFAULT"
 typeset -g QB_WEBUI_PUBLISH="127.0.0.1:8080"
+QB_QUIT_DOCKER_DEFAULT="stop"
+typeset -g QB_QUIT_DOCKER="$QB_QUIT_DOCKER_DEFAULT"
 # Sticky: color allowed for this shell (survives $() subshells where -t 1 is false).
 typeset -g QB_COLOR_OK=0
 
@@ -303,20 +305,40 @@ _qb_require_stack() {
 _qb_quit_lock_acquire() {
     local pid=""
 
-    if [[ -f "$QB_QUIT_LOCK" ]]; then
-        pid="$(<"$QB_QUIT_LOCK" 2>/dev/null)"
+    if mkdir "$QB_QUIT_LOCK" 2>/dev/null; then
+        printf '%s\n' "$$" >"$QB_QUIT_LOCK/pid" || {
+            rmdir "$QB_QUIT_LOCK" 2>/dev/null
+            return 1
+        }
+        return 0
+    fi
+
+    # Stale lock (crash / killed quit): reclaim if owner PID is gone.
+    if [[ -d "$QB_QUIT_LOCK" ]]; then
+        pid="$(<"$QB_QUIT_LOCK/pid" 2>/dev/null)"
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             _qb_line info "Quit already in progress"
             return 1
         fi
+        rm -rf "$QB_QUIT_LOCK" 2>/dev/null
+    elif [[ -e "$QB_QUIT_LOCK" ]]; then
+        rm -rf "$QB_QUIT_LOCK" 2>/dev/null
     fi
 
-    printf '%s\n' "$$" >"$QB_QUIT_LOCK" || return 1
-    return 0
+    if mkdir "$QB_QUIT_LOCK" 2>/dev/null; then
+        printf '%s\n' "$$" >"$QB_QUIT_LOCK/pid" || {
+            rmdir "$QB_QUIT_LOCK" 2>/dev/null
+            return 1
+        }
+        return 0
+    fi
+
+    _qb_line info "Quit already in progress"
+    return 1
 }
 
 _qb_quit_lock_release() {
-    rm -f "$QB_QUIT_LOCK" 2>/dev/null
+    rm -rf "$QB_QUIT_LOCK" 2>/dev/null
 }
 
 _qb_wait_for_docker() {
@@ -455,6 +477,49 @@ _qb_refresh_webui_bind() {
 
     export QB_WEBUI_BIND
     export QB_WEBUI_PUBLISH
+}
+
+# Load QB_QUIT_DOCKER from .env.qbittorrent (optional).
+# stop = also stop Docker Desktop when no other containers (default)
+# keep = leave Docker Desktop running after qb quit
+_qb_refresh_quit_docker() {
+    local configured=""
+    local line=""
+
+    if [[ -f "$QB_API_KEY_FILE" ]]; then
+        line="$(
+            grep -E '^[[:space:]]*QB_QUIT_DOCKER[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
+                tail -n 1
+        )"
+        configured="${line#*=}"
+        configured="${configured//$'\r'/}"
+        configured="${configured//$'\n'/}"
+        configured="${configured#"${configured%%[![:space:]]*}"}"
+        configured="${configured%"${configured##*[![:space:]]}"}"
+        configured="${configured#\"}"
+        configured="${configured%\"}"
+        configured="${configured#\'}"
+        configured="${configured%\'}"
+        configured="${configured:l}"
+    fi
+
+    if [[ -z "$configured" ]]; then
+        [[ -n "$QB_QUIT_DOCKER" ]] || QB_QUIT_DOCKER="$QB_QUIT_DOCKER_DEFAULT"
+    else
+        case "$configured" in
+            stop|off|shutdown)
+                QB_QUIT_DOCKER="stop"
+                ;;
+            keep|leave|on)
+                QB_QUIT_DOCKER="keep"
+                ;;
+            *)
+                QB_QUIT_DOCKER="$QB_QUIT_DOCKER_DEFAULT"
+                ;;
+        esac
+    fi
+
+    export QB_QUIT_DOCKER
 }
 
 _qb_downloads_mount_matches() {
@@ -914,6 +979,10 @@ _qb_start() {
 _qb_quit() {
     _qb_refresh_downloads
     _qb_refresh_webui_bind
+    _qb_refresh_quit_docker
+
+    local keep_docker=0
+    [[ "$QB_QUIT_DOCKER" == "keep" ]] && keep_docker=1
 
     if ! _qb_quit_lock_acquire; then
         return 0
@@ -930,7 +999,7 @@ _qb_quit() {
         local other_containers
         other_containers="$(_qb_other_containers)"
 
-        if [[ -n "$other_containers" ]]; then
+        if (( keep_docker )) || [[ -n "$other_containers" ]]; then
             _qb_line off "qBittorrent already stopped"
             _qb_line info "Leaving Docker Desktop running"
             return 0
@@ -967,6 +1036,11 @@ _qb_quit() {
     fi
 
     if ! _qb_docker_running; then
+        return 0
+    fi
+
+    if (( keep_docker )); then
+        _qb_line info "Leaving Docker Desktop running"
         return 0
     fi
 
@@ -1070,6 +1144,7 @@ _qb_status() {
 
     _qb_line info "Output style: $QB_STYLE"
     _qb_line info "WebUI bind: $QB_WEBUI_BIND"
+    _qb_line info "Quit Docker: $QB_QUIT_DOCKER"
 }
 
 _qb_torrents() {
@@ -1707,7 +1782,7 @@ _qb_help() {
         "Usage:" \
         "" \
         "  qb start       Start Docker + qBittorrent + open/focus WebUI app" \
-        "  qb quit        Stop qBittorrent + Docker safely" \
+        "  qb quit        Stop qBittorrent; stop Docker Desktop if nothing else is running" \
         "  qb restart     Restart qBittorrent" \
         "  qb status      Show current state" \
         "  qb torrents    Show active downloads" \
@@ -1730,6 +1805,7 @@ qb() {
     _qb_refresh_style
     _qb_refresh_downloads
     _qb_refresh_webui_bind
+    _qb_refresh_quit_docker
     _qb_update_color_ok
 
     case "$1" in
@@ -1831,4 +1907,5 @@ fi
 _qb_refresh_style
 _qb_refresh_downloads
 _qb_refresh_webui_bind
+_qb_refresh_quit_docker
 _qb_update_color_ok

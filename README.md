@@ -64,6 +64,16 @@ QB_WEBUI_BIND=lan
 
 Then run `qb start` (recreates if the publish changed) or `qb repair`. Peer port `6881` is unchanged.
 
+### Quit behavior (optional)
+
+By default `qb quit` also stops Docker Desktop when no other containers are running. To leave Docker Desktop up and only stop qBittorrent, set in `.env.qbittorrent`:
+
+```zsh
+QB_QUIT_DOCKER=keep
+```
+
+(`stop` is the default.)
+
 Load the CLI from your `~/.zshrc`:
 
 ```zsh
@@ -116,7 +126,7 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 | Command | Description |
 | --- | --- |
 | `qb start` | Start Docker Desktop if needed, start qBittorrent, and open/focus the Dock Web App (idempotent; never a Safari tab). Remounts if `QB_DOWNLOADS` changed. If the local image is 90+ days old **and** a newer registry digest exists, prints a one-line suggestion to run `qb update` (does not auto-update; no nag when already latest or offline). |
-| `qb quit` | Close the WebUI app and stop qBittorrent. Docker Desktop stops only when no other containers are running. |
+| `qb quit` | Close the WebUI app and stop qBittorrent. Docker Desktop stops only when no other containers are running (override with `QB_QUIT_DOCKER=keep`). |
 | `qb restart` | Restart qBittorrent and wait for the WebUI. |
 | `qb status` | Show Docker, container, WebUI, and other-container status. |
 | `qb torrents` | List active downloads. |
@@ -238,9 +248,9 @@ If automation fails, use Option A instead.
 | `qb.zsh` | `qb` CLI commands. |
 | `config/` | Persistent qBittorrent configuration and session state. |
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
-| `plugins/` | Local qBittorrent search plugins. |
+| `plugins/` | Local search plugins (third-party Python — review before enabling). |
 | `webui-layout.js` | Column layout script used by `qb layout`. |
-| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_STYLE`, `QB_WEBUI_BIND`. |
+| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_STYLE`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
 
