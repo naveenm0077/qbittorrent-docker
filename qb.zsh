@@ -9,6 +9,7 @@ QB_APP="$HOME/Applications/qBittorrent.app"
 QB_URL="http://localhost:8080"
 QB_API_KEY_FILE="$QB_DIR/.env.qbittorrent"
 QB_IMAGE_STALE_DAYS=60
+QB_QUIT_LOCK="/tmp/qb-quit.lock"
 
 typeset -g QB_SPINNER_PID=""
 
@@ -67,6 +68,47 @@ _qb_webui_ready() {
     curl -fsS "$QB_URL" >/dev/null 2>&1
 }
 
+# Docker engine only (for images/prune). No compose/API side effects before this returns.
+_qb_require_docker() {
+    if _qb_docker_running; then
+        return 0
+    fi
+
+    _qb_failure "Docker Desktop is not running"
+    printf "Run: qb start\n"
+    return 1
+}
+
+# Live stack gate — see _qb_stack_ready (defined after API helpers).
+_qb_require_stack() {
+    if _qb_stack_ready; then
+        return 0
+    fi
+
+    _qb_failure "qBittorrent is not running"
+    printf "Run: qb start\n"
+    return 1
+}
+
+_qb_quit_lock_acquire() {
+    local pid=""
+
+    if [[ -f "$QB_QUIT_LOCK" ]]; then
+        pid="$(<"$QB_QUIT_LOCK" 2>/dev/null)"
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            printf "→ Quit already in progress\n"
+            return 1
+        fi
+    fi
+
+    printf '%s\n' "$$" >"$QB_QUIT_LOCK" || return 1
+    return 0
+}
+
+_qb_quit_lock_release() {
+    rm -f "$QB_QUIT_LOCK" 2>/dev/null
+}
+
 _qb_wait_for_docker() {
     local timeout="${1:-60}"
     local elapsed=0
@@ -118,6 +160,72 @@ _qb_api_ok() {
     curl -fsS \
     -H "Authorization: Bearer $api_key" \
     "$QB_URL/api/v2/app/version" >/dev/null 2>&1
+}
+
+_qb_api_key_usable() {
+    local api_key
+
+    api_key="$(_qb_api_key)" || return 1
+    api_key="${api_key//$'\r'/}"
+    api_key="${api_key//$'\n'/}"
+
+    [[ -n "$api_key" ]] || return 1
+    [[ "$api_key" != "replace_with_your_qbittorrent_webui_api_key" ]] || return 1
+    return 0
+}
+
+_qb_api_key_hint() {
+    printf "Set QBIT_API_KEY in %s\n" "$QB_API_KEY_FILE"
+    printf "Copy from: qBittorrent WebUI → Tools → Options → Web UI → Authentication (API key)\n"
+    printf "Create the file with: cp %s/.env.example %s\n" "$QB_DIR" "$QB_API_KEY_FILE"
+}
+
+# For commands that call the authenticated WebAPI (torrents, update, …).
+_qb_require_api() {
+    if ! _qb_api_key_usable; then
+        _qb_failure "WebUI API key is missing or not set"
+        _qb_api_key_hint
+        return 1
+    fi
+
+    if ! _qb_api_ok; then
+        _qb_failure "WebUI API key was rejected (incorrect or revoked)"
+        printf "Update QBIT_API_KEY in %s\n" "$QB_API_KEY_FILE"
+        _qb_api_key_hint
+        return 1
+    fi
+
+    return 0
+}
+
+# Stricter than UI root curl: proves qBit API (not a random :8080 listener).
+# Prefer auth when a real API key is configured; otherwise try public version, then UI root.
+_qb_stack_ready() {
+    if _qb_api_ok; then
+        return 0
+    fi
+
+    if curl -fsS "$QB_URL/api/v2/app/version" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # No usable key: allow UI root so logs/shell still work before key setup.
+    if ! _qb_api_key >/dev/null 2>&1; then
+        _qb_webui_ready
+        return $?
+    fi
+
+    local api_key
+    api_key="$(_qb_api_key)" || return 1
+    api_key="${api_key//$'\r'/}"
+    api_key="${api_key//$'\n'/}"
+    if [[ -z "$api_key" || "$api_key" == "replace_with_your_qbittorrent_webui_api_key" ]]; then
+        _qb_webui_ready
+        return $?
+    fi
+
+    # Key present but auth failed — do not treat a generic :8080 page as OK.
+    return 1
 }
 
 _qb_port_listening() {
@@ -416,6 +524,39 @@ _qb_start() {
 }
 
 _qb_quit() {
+    if ! _qb_quit_lock_acquire; then
+        return 0
+    fi
+    trap '_qb_quit_lock_release; trap - EXIT' EXIT
+
+    # Already fully stopped.
+    if ! _qb_app_running && ! _qb_container_running; then
+        if ! _qb_docker_running; then
+            printf "✓ qBittorrent already stopped\n"
+            return 0
+        fi
+
+        local other_containers
+        other_containers="$(_qb_other_containers)"
+
+        if [[ -n "$other_containers" ]]; then
+            printf "✓ qBittorrent already stopped\n"
+            printf "→ Leaving Docker Desktop running\n"
+            return 0
+        fi
+
+        _qb_spinner "Stopping Docker Desktop..."
+
+        if ! docker desktop stop --detach >/dev/null 2>&1; then
+            _qb_failure "Failed to stop Docker Desktop"
+            return 1
+        fi
+
+        _qb_success "Docker Desktop stopped"
+        return 0
+    fi
+
+    # Gradual quit: close whatever is still up.
     _qb_close_app
 
     if _qb_container_running; then
@@ -423,24 +564,24 @@ _qb_quit() {
             _qb_failure "qBittorrent directory not found"
             return 1
         }
-        
+
         _qb_spinner "Stopping qBittorrent..."
-        
+
         if ! docker compose stop >/dev/null 2>&1; then
             _qb_failure "Failed to stop qBittorrent"
             return 1
         fi
-        
+
         _qb_success "qBittorrent stopped"
     fi
-    
+
     if ! _qb_docker_running; then
         return 0
     fi
-    
+
     local other_containers
     other_containers="$(_qb_other_containers)"
-    
+
     if [[ -n "$other_containers" ]]; then
         local other_count
         other_count="$(
@@ -448,19 +589,19 @@ _qb_quit() {
             wc -l |
             tr -d ' '
         )"
-        
+
         printf "✓ %s other Docker container(s) still running\n" "$other_count"
         printf "→ Leaving Docker Desktop running\n"
         return 0
     fi
-    
+
     _qb_spinner "Stopping Docker Desktop..."
-    
+
     if ! docker desktop stop --detach >/dev/null 2>&1; then
         _qb_failure "Failed to stop Docker Desktop"
         return 1
     fi
-    
+
     _qb_success "Docker Desktop stopped"
 }
 
@@ -535,11 +676,9 @@ _qb_status() {
 }
 
 _qb_torrents() {
-    if ! _qb_webui_ready; then
-        _qb_failure "WebUI is not available"
-        return 1
-    fi
-    
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
     local response
     response="$(_qb_active_downloads)" || {
         _qb_failure "Failed to query qBittorrent"
@@ -574,30 +713,26 @@ PY
 
 _qb_logs() {
     local lines="${2:-50}"
-    
+
     if [[ ! "$lines" =~ '^[0-9]+$' ]]; then
         printf "Usage: qb logs [number-of-lines]\n"
         return 1
     fi
-    
+
+    _qb_require_stack || return 1
+
     docker logs --tail "$lines" -f qbittorrent
 }
 
 _qb_shell() {
-    if ! _qb_container_running; then
-        _qb_failure "qBittorrent is not running"
-        return 1
-    fi
-    
+    _qb_require_stack || return 1
+
     docker exec -it qbittorrent /bin/bash
 }
 
 _qb_info() {
-    if ! _qb_container_exists; then
-        _qb_failure "qBittorrent container does not exist"
-        return 1
-    fi
-    
+    _qb_require_stack || return 1
+
     docker inspect qbittorrent \
     --format 'Name: {{.Name}}
 Image: {{.Config.Image}}
@@ -616,46 +751,29 @@ Started: {{.State.StartedAt}}
 }
 
 _qb_version() {
-    if ! _qb_webui_ready; then
-        _qb_failure "WebUI is not available"
-        return 1
-    fi
-    
+    _qb_require_stack || return 1
+
     local version
-    
+
     version="$(
         curl -fsS "$QB_URL/api/v2/app/version"
         )" || {
         _qb_failure "Failed to get qBittorrent version"
         return 1
     }
-    
+
     printf "qBittorrent %s\n" "$version"
 }
 
 _qb_update() {
+    _qb_require_stack || return 1
+    _qb_require_api || return 1
+
     cd "$QB_DIR" || {
         _qb_failure "qBittorrent directory not found"
         return 1
     }
-    
-    if ! _qb_docker_running; then
-        _qb_failure "Docker Desktop is not running"
-        printf "Run: qb start\n"
-        return 1
-    fi
-    
-    if ! _qb_container_running; then
-        _qb_failure "qBittorrent is not running"
-        printf "Run: qb start\n"
-        return 1
-    fi
-    
-    if ! _qb_webui_ready; then
-        _qb_failure "WebUI is not available"
-        return 1
-    fi
-    
+
     local response
     response="$(_qb_active_downloads)" || {
         _qb_failure "Failed to check active downloads"
@@ -753,11 +871,7 @@ _qb_update() {
 }
 
 _qb_images() {
-    if ! _qb_docker_running; then
-        _qb_failure "Docker Desktop is not running"
-        printf "Run: qb start\n"
-        return 1
-    fi
+    _qb_require_docker || return 1
 
     python3 <<'PY'
 import json
@@ -908,11 +1022,7 @@ _qb_prune() {
     local -a candidates
     local -A seen
 
-    if ! _qb_docker_running; then
-        _qb_failure "Docker Desktop is not running"
-        printf "Run: qb start\n"
-        return 1
-    fi
+    _qb_require_docker || return 1
 
     keep_id="$(_qb_kept_image_id)" || {
         _qb_failure "Failed to resolve the image to keep"
@@ -970,6 +1080,8 @@ _qb_repair() {
     local active_count="0"
     
     if _qb_container_running && _qb_webui_ready; then
+        _qb_require_api || return 1
+
         local response
         
         response="$(_qb_active_downloads)" || {
@@ -1117,21 +1229,20 @@ _qb_doctor() {
         printf "○ Image age: unknown\n"
     fi
     
-    if [[ -f "$QB_API_KEY_FILE" ]]; then
-        printf "✓ API key file: present\n"
-    else
-        printf "✗ API key file: missing\n"
+    if ! _qb_api_key_usable; then
+        printf "✗ API key: missing or not set\n"
+        _qb_api_key_hint
         issues=1
-    fi
-
-    if [[ ! -f "$QB_API_KEY_FILE" ]]; then
-        printf "○ API: skipped\n"
     elif ! _qb_webui_ready; then
+        printf "✓ API key file: present\n"
         printf "○ API: skipped (WebUI unavailable)\n"
     elif _qb_api_ok; then
+        printf "✓ API key file: present\n"
         printf "✓ API: authorized\n"
     else
-        printf "✗ API: authorization failed\n"
+        printf "✓ API key file: present\n"
+        printf "✗ API: authorization failed (incorrect or revoked key)\n"
+        _qb_api_key_hint
         issues=1
     fi
 
@@ -1147,11 +1258,7 @@ _qb_layout() {
         return 1
     fi
 
-    if ! _qb_webui_ready; then
-        _qb_failure "WebUI is not available"
-        printf "Run: qb start\n"
-        return 1
-    fi
+    _qb_require_stack || return 1
 
     if [[ ! -d "$QB_APP" ]]; then
         _qb_failure "qBittorrent.app not found"

@@ -21,7 +21,14 @@ Create the local API-key file:
 cp .env.example .env.qbittorrent
 ```
 
-Set `QBIT_API_KEY` in `.env.qbittorrent` to the WebUI API key from your local qBittorrent configuration. This file is ignored by Git.
+Set `QBIT_API_KEY` in `.env.qbittorrent` to your WebUI API key:
+
+1. Start qBittorrent (`qb start`) and open the WebUI.
+2. **Tools → Options → Web UI**.
+3. Under **Authentication**, copy or generate the **API key**.
+4. Paste it into `.env.qbittorrent` as `QBIT_API_KEY=...` and save.
+
+This file is ignored by Git. Commands like `qb torrents` and `qb update` need a valid key; if it is missing or wrong they print where to fix it.
 
 Load the CLI from your `~/.zshrc`:
 
@@ -90,6 +97,13 @@ After that, `qb start` can still start the Docker engine; the dashboard stays cl
 | `qb doctor` | Check Docker, container, WebUI, mounts, API auth, port 8080, and local directories. |
 | `qb layout` | Optional one-shot helper to apply the torrent table column layout (see below). |
 | `qb help` | Show the command list. |
+
+### When the stack is not running
+
+- **Lifecycle** (`start`, `quit`, `restart`, `repair`): may change state. `start` / `restart` (when down) / `repair` can bring things up. `quit` is idempotent (finishes a partial shutdown; says already stopped if nothing is left; blocks overlapping quit spam).
+- **Diagnose** (`status`, `doctor`, `help`): read-only; OK when everything is down.
+- **Need a live stack** (`torrents`, `logs`, `shell`, `info`, `version`, `update`, `layout`): fail immediately with `Run: qb start` — checks qBittorrent via `/api/v2/app/version` (uses the API key when configured).
+- **Need Docker only** (`images`, `prune`): fail with `Run: qb start` if the Docker engine is down.
 
 ## WebUI column layout (optional)
 
