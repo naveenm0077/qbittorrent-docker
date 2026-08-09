@@ -40,6 +40,18 @@ QB_DOWNLOADS=/Volumes/Storage/torrents
 
 `~` is expanded. You do not need this variable for the default path. After changing it, run `qb start` (recreates the container only if the mount differs) or `qb repair`.
 
+### Output style (optional)
+
+CLI messages default to **color** (same marks as `gh`: green `✓`, red `X`, plus colored status words). Set in `.env.qbittorrent`:
+
+```zsh
+QB_STYLE=bare    # ✓ / X / ■ — no color; plain braille spinner
+QB_STYLE=color   # same marks + ANSI (default; like gh); green braille spinner
+QB_STYLE=emoji   # ✅ ❌ 🛑 ➡️ ↗️; moon-phase spinner
+```
+
+Aliases: `plain`→`bare`, `ansi`/`gh`→`color`, `rich`/`boxes`→`emoji`. Color is skipped when output is not a TTY or when `NO_COLOR` is set. Set `FORCE_COLOR=1` to keep ANSI even when piped.
+
 Load the CLI from your `~/.zshrc`:
 
 ```zsh
@@ -216,7 +228,7 @@ If automation fails, use Option A instead.
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
 | `plugins/` | Local qBittorrent search plugins. |
 | `webui-layout.js` | Column layout script used by `qb layout`. |
-| `.env.qbittorrent` | Local WebUI API key and optional `QB_DOWNLOADS`. |
+| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, optional `QB_STYLE`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
 

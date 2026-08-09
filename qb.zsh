@@ -11,6 +11,10 @@ QB_URL="http://localhost:8080"
 QB_API_KEY_FILE="$QB_DIR/.env.qbittorrent"
 QB_IMAGE_STALE_DAYS=60
 QB_QUIT_LOCK="/tmp/qb-quit.lock"
+QB_STYLE_DEFAULT="color"
+typeset -g QB_STYLE="$QB_STYLE_DEFAULT"
+# Sticky: color allowed for this shell (survives $() subshells where -t 1 is false).
+typeset -g QB_COLOR_OK=0
 
 typeset -g QB_SPINNER_PID=""
 
@@ -22,31 +26,233 @@ _qb_cleanup_spinner() {
     fi
 }
 
+# bare/color: braille dots; emoji: moon phases. color paints the braille green.
+_qb_spinner_frames() {
+    if _qb_style_emoji; then
+        printf '%s\n' '🌑' '🌒' '🌓' '🌔' '🌕' '🌖' '🌗' '🌘'
+    else
+        printf '%s\n' '⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏'
+    fi
+}
+
 _qb_spinner() {
     local message="$1"
-    local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
-    
+    local style="$QB_STYLE"
+    local color_ok="$QB_COLOR_OK"
+    local -a frames
+    local interval=0.08
+
+    frames=("${(@f)$(_qb_spinner_frames)}")
+    if _qb_style_emoji; then
+        interval=0.12
+    fi
+
     (
         local i=1
-        
+        local frame
+        local QB_STYLE="$style"
+        local QB_COLOR_OK="$color_ok"
+
         while true; do
-            printf "\r\033[2K%s %s" "${frames[i]}" "$message"
+            frame="${frames[i]}"
+            if [[ "$QB_STYLE" == "color" ]] && (( QB_COLOR_OK )) && [[ -z "${NO_COLOR:-}" ]]; then
+                frame=$'\033[32m'"${frame}"$'\033[0m'
+            fi
+            printf "\r\033[2K%s %s" "$frame" "$message"
             i=$((i % ${#frames[@]} + 1))
-            sleep 0.08
+            sleep "$interval"
         done
     ) &!
-    
+
     QB_SPINNER_PID=$!
+}
+
+# Load QB_STYLE from .env.qbittorrent (bare|color|emoji). Default: color.
+# File wins when set; otherwise keep current value (allows QB_STYLE=bare qb status).
+_qb_refresh_style() {
+    local configured=""
+    local line=""
+
+    if [[ -f "$QB_API_KEY_FILE" ]]; then
+        line="$(
+            grep -E '^[[:space:]]*QB_STYLE[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
+                tail -n 1
+        )"
+        configured="${line#*=}"
+        configured="${configured//$'\r'/}"
+        configured="${configured//$'\n'/}"
+        # trim spaces
+        configured="${configured#"${configured%%[![:space:]]*}"}"
+        configured="${configured%"${configured##*[![:space:]]}"}"
+        configured="${configured#\"}"
+        configured="${configured%\"}"
+        configured="${configured#\'}"
+        configured="${configured%\'}"
+        configured="${configured:l}"
+    fi
+
+    if [[ -z "$configured" ]]; then
+        [[ -n "$QB_STYLE" ]] || QB_STYLE="$QB_STYLE_DEFAULT"
+        _qb_update_color_ok
+        return 0
+    fi
+
+    case "$configured" in
+        bare|plain|ascii)
+            QB_STYLE="bare"
+            ;;
+        color|ansi|gh)
+            QB_STYLE="color"
+            ;;
+        emoji|rich|boxes)
+            QB_STYLE="emoji"
+            ;;
+        *)
+            QB_STYLE="$QB_STYLE_DEFAULT"
+            ;;
+    esac
+
+    _qb_update_color_ok
+}
+
+_qb_style_emoji() {
+    [[ "$QB_STYLE" == "emoji" ]]
+}
+
+# Decide whether ANSI color is allowed. Must be sticky: $(_qb_state …) runs in a
+# subshell where stdout is not a TTY, so a live [[ -t 1 ]] check would strip color.
+_qb_update_color_ok() {
+    QB_COLOR_OK=0
+
+    [[ -z "${NO_COLOR:-}" ]] || return 0
+    [[ "$QB_STYLE" == "color" || "$QB_STYLE" == "emoji" ]] || return 0
+
+    if [[ "${FORCE_COLOR:-0}" == "1" || -t 1 ]]; then
+        QB_COLOR_OK=1
+    fi
+}
+
+_qb_style_color() {
+    [[ "$QB_STYLE" == "color" || "$QB_STYLE" == "emoji" ]] || return 1
+    [[ -z "${NO_COLOR:-}" ]] || return 1
+    (( QB_COLOR_OK )) || return 1
+    return 0
+}
+
+_qb_paint() {
+    local color="$1"
+    local text="$2"
+    local code=""
+
+    if ! _qb_style_color; then
+        printf '%s' "$text"
+        return 0
+    fi
+
+    case "$color" in
+        green)   code='32' ;;
+        red)     code='31' ;;                 # bright — errors (X)
+        # Clear crimson (not brown/maroon 124). Ghostty/truecolor.
+        darkred)
+            printf '\033[38;2;220;38;38m%s\033[0m' "$text"
+            return 0
+            ;;
+        yellow)  code='33' ;;
+        dim)     code='2' ;;
+        *)
+            printf '%s' "$text"
+            return 0
+            ;;
+    esac
+
+    printf '\033[%sm%s\033[0m' "$code" "$text"
+}
+
+# Glyphs: bare/color match gh-style (✓ / X); emoji uses boxed marks.
+_qb_sym() {
+    local kind="$1"
+
+    if _qb_style_emoji; then
+        case "$kind" in
+            ok)   printf '✅' ;;
+            fail) printf '❌' ;;
+            off)  printf '🛑' ;;
+            info) printf '➡️' ;;
+            open) printf '↗️' ;;
+            *)    printf '•' ;;
+        esac
+    else
+        case "$kind" in
+            ok)   printf '✓' ;;
+            fail) printf 'X' ;;
+            off)  printf '■' ;;
+            info) printf '→' ;;
+            open) printf '↗' ;;
+            *)    printf '-' ;;
+        esac
+    fi
+}
+
+# Mark with optional color (gh paints ✓ green / X red; emoji glyphs as-is —
+# terminals ignore ANSI on most emoji, so off uses an inherently red 🛑).
+_qb_mark() {
+    local kind="$1"
+    local sym
+
+    sym="$(_qb_sym "$kind")"
+
+    if _qb_style_emoji; then
+        printf '%s' "$sym"
+        return 0
+    fi
+
+    case "$kind" in
+        ok)   _qb_paint green "$sym" ;;
+        fail) _qb_paint red "$sym" ;;
+        off)  _qb_paint darkred "$sym" ;;
+        *)    printf '%s' "$sym" ;;
+    esac
+}
+
+_qb_state() {
+    local word="$1"
+
+    case "$word" in
+        running|ready|present|exists|listening|reachable)
+            _qb_paint green "$word"
+            ;;
+        stopped|missing|unavailable|unreachable|rejected)
+            _qb_paint darkred "$word"
+            ;;
+        unknown|skipped)
+            _qb_paint dim "$word"
+            ;;
+        *)
+            printf '%s' "$word"
+            ;;
+    esac
+}
+
+_qb_line() {
+    local kind="$1"
+    shift
+    printf '%s %s\n' "$(_qb_mark "$kind")" "$*"
 }
 
 _qb_success() {
     _qb_cleanup_spinner
-    printf "\r\033[2K✓ %s\n" "$1"
+    printf "\r\033[2K%s %s\n" "$(_qb_mark ok)" "$1"
+}
+
+# Successful stop / already-stopped (off mark, not green ✓).
+_qb_stopped() {
+    _qb_cleanup_spinner
+    printf "\r\033[2K%s %s\n" "$(_qb_mark off)" "$1"
 }
 
 _qb_failure() {
     _qb_cleanup_spinner
-    printf "\r\033[2K✗ %s\n" "$1"
+    printf "\r\033[2K%s %s\n" "$(_qb_mark fail)" "$1"
 }
 
 _qb_docker_running() {
@@ -97,7 +303,7 @@ _qb_quit_lock_acquire() {
     if [[ -f "$QB_QUIT_LOCK" ]]; then
         pid="$(<"$QB_QUIT_LOCK" 2>/dev/null)"
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-            printf "→ Quit already in progress\n"
+            _qb_line info "Quit already in progress"
             return 1
         fi
     fi
@@ -491,7 +697,7 @@ _qb_image_age_notice() {
     days="$(_qb_image_age_days)" || return 0
 
     if (( days >= QB_IMAGE_STALE_DAYS )); then
-        printf "→ Image is %s days old. Consider: qb update\n" "$days"
+        _qb_line info "Image is $days days old. Consider: qb update"
     fi
 }
 
@@ -510,7 +716,7 @@ _qb_open_app() {
     # Always use the Dock Web App. Never open QB_URL in Safari.
     if _qb_app_running; then
         if osascript -e 'tell application "qBittorrent" to activate' >/dev/null 2>&1; then
-            printf "✓ qBittorrent WebUI already open\n"
+            _qb_line ok "qBittorrent WebUI already open"
             return 0
         fi
 
@@ -518,7 +724,7 @@ _qb_open_app() {
         return 1
     fi
 
-    printf "↗ Opening qBittorrent\n"
+    _qb_line open "Opening qBittorrent"
 
     if open -a "$QB_APP" >/dev/null 2>&1; then
         return 0
@@ -531,13 +737,13 @@ _qb_open_app() {
 _qb_close_app() {
     if _qb_app_running; then
         if osascript -e 'tell application "qBittorrent" to quit' >/dev/null 2>&1; then
-            printf "✓ qBittorrent WebUI closed\n"
+            _qb_line ok "qBittorrent WebUI closed"
         else
             _qb_failure "Failed to close qBittorrent WebUI"
             return 1
         fi
     else
-        printf "✓ qBittorrent WebUI already closed\n"
+        _qb_line ok "qBittorrent WebUI already closed"
     fi
 }
 
@@ -594,7 +800,7 @@ _qb_start() {
         fi
 
         _qb_success "Downloads mount updated"
-        printf "→ Host path: %s\n" "$QB_DOWNLOADS"
+        _qb_line info "Host path: $QB_DOWNLOADS"
     fi
     
     if ! _qb_webui_ready; then
@@ -607,7 +813,7 @@ _qb_start() {
         
         _qb_success "WebUI ready"
     else
-        printf "✓ WebUI ready\n"
+        _qb_line ok "WebUI ready"
     fi
 
     _qb_image_age_notice
@@ -626,7 +832,7 @@ _qb_quit() {
     # Already fully stopped.
     if ! _qb_app_running && ! _qb_container_running; then
         if ! _qb_docker_running; then
-            printf "✓ qBittorrent already stopped\n"
+            _qb_line off "qBittorrent already stopped"
             return 0
         fi
 
@@ -634,8 +840,8 @@ _qb_quit() {
         other_containers="$(_qb_other_containers)"
 
         if [[ -n "$other_containers" ]]; then
-            printf "✓ qBittorrent already stopped\n"
-            printf "→ Leaving Docker Desktop running\n"
+            _qb_line off "qBittorrent already stopped"
+            _qb_line info "Leaving Docker Desktop running"
             return 0
         fi
 
@@ -646,7 +852,7 @@ _qb_quit() {
             return 1
         fi
 
-        _qb_success "Docker Desktop stopped"
+        _qb_stopped "Docker Desktop stopped"
         return 0
     fi
 
@@ -666,7 +872,7 @@ _qb_quit() {
             return 1
         fi
 
-        _qb_success "qBittorrent stopped"
+        _qb_stopped "qBittorrent stopped"
     fi
 
     if ! _qb_docker_running; then
@@ -684,8 +890,8 @@ _qb_quit() {
             tr -d ' '
         )"
 
-        printf "✓ %s other Docker container(s) still running\n" "$other_count"
-        printf "→ Leaving Docker Desktop running\n"
+        _qb_line ok "$other_count other Docker container(s) still running"
+        _qb_line info "Leaving Docker Desktop running"
         return 0
     fi
 
@@ -696,7 +902,7 @@ _qb_quit() {
         return 1
     fi
 
-    _qb_success "Docker Desktop stopped"
+    _qb_stopped "Docker Desktop stopped"
 }
 
 _qb_restart() {
@@ -735,27 +941,27 @@ _qb_restart() {
 
 _qb_status() {
     if _qb_docker_running; then
-        printf "✓ Docker Desktop: running\n"
+        _qb_line ok "Docker Desktop: $(_qb_state running)"
     else
-        printf "○ Docker Desktop: stopped\n"
+        _qb_line off "Docker Desktop: $(_qb_state stopped)"
     fi
-    
+
     if _qb_container_running; then
-        printf "✓ qBittorrent: running\n"
+        _qb_line ok "qBittorrent: $(_qb_state running)"
     else
-        printf "○ qBittorrent: stopped\n"
+        _qb_line off "qBittorrent: $(_qb_state stopped)"
     fi
-    
+
     if _qb_webui_ready; then
-        printf "✓ WebUI: ready\n"
+        _qb_line ok "WebUI: $(_qb_state ready)"
     else
-        printf "○ WebUI: unavailable\n"
+        _qb_line off "WebUI: $(_qb_state unavailable)"
     fi
-    
+
     if _qb_docker_running; then
         local other_containers
         other_containers="$(_qb_other_containers)"
-        
+
         if [[ -n "$other_containers" ]]; then
             local other_count
             other_count="$(
@@ -763,12 +969,14 @@ _qb_status() {
                 wc -l |
                 tr -d ' '
             )"
-            
-            printf "✓ Other containers: %s\n" "$other_count"
+
+            _qb_line ok "Other containers: $other_count"
         else
-            printf "○ Other containers: 0\n"
+            _qb_line off "Other containers: 0"
         fi
     fi
+
+    _qb_line info "Output style: $QB_STYLE"
 }
 
 _qb_torrents() {
@@ -911,13 +1119,13 @@ _qb_update() {
 
     if [[ -n "$local_digest" && -n "$remote_digest" ]]; then
         if _qb_digests_equal "$local_digest" "$remote_digest"; then
-            printf "✓ Already up to date\n"
+            _qb_line ok "Already up to date"
             return 0
         fi
 
-        printf "→ Newer image available\n"
+        _qb_line info "Newer image available"
     else
-        printf "○ Could not compare digests; pulling to verify\n"
+        _qb_line off "Could not compare digests; pulling to verify"
     fi
 
     _qb_spinner "Pulling latest qBittorrent image..."
@@ -936,7 +1144,7 @@ _qb_update() {
     }
 
     if [[ "$old_id" == "$new_id" ]]; then
-        printf "✓ Already up to date\n"
+        _qb_line ok "Already up to date"
         return 0
     fi
     
@@ -959,9 +1167,9 @@ _qb_update() {
     _qb_success "WebUI ready"
 
     if _qb_remove_image_id "$old_id"; then
-        printf "✓ Removed previous image %s\n" "$(_qb_short_image_id "$old_id")"
+        _qb_line ok "Removed previous image $(_qb_short_image_id "$old_id")"
     else
-        printf "○ Previous image left in place (in use or already gone)\n"
+        _qb_line off "Previous image left in place (in use or already gone)"
     fi
 
     _qb_open_app
@@ -1143,22 +1351,21 @@ _qb_prune() {
         fi
 
         if _qb_remove_image_id "$image_id"; then
-            printf "✓ Removed %s\n" "$(_qb_short_image_id "$image_id")"
+            _qb_line ok "Removed $(_qb_short_image_id "$image_id")"
             removed=$((removed + 1))
         else
-            printf "○ Skipped %s (in use or already gone)\n" \
-                "$(_qb_short_image_id "$image_id")"
+            _qb_line off "Skipped $(_qb_short_image_id "$image_id") (in use or already gone)"
             skipped=$((skipped + 1))
         fi
     done
 
     if (( removed == 0 && skipped == 0 )); then
-        printf "✓ No leftover qBittorrent images to prune\n"
+        _qb_line ok "No leftover qBittorrent images to prune"
         return 0
     fi
 
-    printf "✓ Prune finished (removed %s, kept/skipped %s)\n" "$removed" "$skipped"
-    printf "→ Keeping active image %s\n" "$(_qb_short_image_id "$keep_id")"
+    _qb_line ok "Prune finished (removed $removed, kept/skipped $skipped)"
+    _qb_line info "Keeping active image $(_qb_short_image_id "$keep_id")"
 }
 
 _qb_repair() {
@@ -1245,102 +1452,102 @@ _qb_doctor() {
     local issues=0
 
     printf "qBittorrent diagnostics\n\n"
-    
+
     if _qb_docker_running; then
-        printf "✓ Docker Desktop: running\n"
+        _qb_line ok "Docker Desktop: $(_qb_state running)"
     else
-        printf "✗ Docker Desktop: stopped\n"
+        _qb_line fail "Docker Desktop: $(_qb_state stopped)"
         issues=1
     fi
-    
+
     if _qb_container_exists; then
-        printf "✓ Container: exists\n"
+        _qb_line ok "Container: $(_qb_state exists)"
     else
-        printf "✗ Container: missing\n"
+        _qb_line fail "Container: $(_qb_state missing)"
         issues=1
     fi
-    
+
     if _qb_container_running; then
-        printf "✓ Container: running\n"
+        _qb_line ok "Container: $(_qb_state running)"
     else
-        printf "○ Container: stopped\n"
+        _qb_line off "Container: $(_qb_state stopped)"
     fi
-    
+
     if _qb_container_running; then
         if _qb_webui_ready; then
-            printf "✓ WebUI: reachable\n"
+            _qb_line ok "WebUI: $(_qb_state reachable)"
         else
-            printf "✗ WebUI: unreachable\n"
+            _qb_line fail "WebUI: $(_qb_state unreachable)"
             issues=1
         fi
 
         if _qb_port_listening 8080; then
-            printf "✓ Port 8080: listening\n"
+            _qb_line ok "Port 8080: $(_qb_state listening)"
         else
-            printf "✗ Port 8080: not listening\n"
+            _qb_line fail "Port 8080: not listening"
             issues=1
         fi
     else
-        printf "○ WebUI: unavailable\n"
-        printf "○ Port 8080: not listening\n"
+        _qb_line off "WebUI: $(_qb_state unavailable)"
+        _qb_line off "Port 8080: not listening"
     fi
 
     if _qb_container_exists; then
         if _qb_container_mounts_ok; then
-            printf "✓ Mounts: /config /downloads /plugins\n"
+            _qb_line ok "Mounts: /config /downloads /plugins"
         else
-            printf "✗ Mounts: missing expected paths\n"
+            _qb_line fail "Mounts: missing expected paths"
             issues=1
         fi
     else
-        printf "○ Mounts: skipped\n"
+        _qb_line off "Mounts: $(_qb_state skipped)"
     fi
-    
+
     if [[ -d "$QB_DIR/config" ]]; then
-        printf "✓ Config directory: present\n"
+        _qb_line ok "Config directory: $(_qb_state present)"
     else
-        printf "✗ Config directory: missing\n"
+        _qb_line fail "Config directory: $(_qb_state missing)"
         issues=1
     fi
-    
+
     if [[ -d "$QB_DOWNLOADS" ]]; then
-        printf "✓ Downloads directory: %s\n" "$QB_DOWNLOADS"
+        _qb_line ok "Downloads directory: $QB_DOWNLOADS"
     else
-        printf "✗ Downloads directory missing: %s\n" "$QB_DOWNLOADS"
+        _qb_line fail "Downloads directory missing: $QB_DOWNLOADS"
         issues=1
     fi
-    
+
     if [[ -d "$QB_DIR/plugins" ]]; then
-        printf "✓ Plugins directory: present\n"
+        _qb_line ok "Plugins directory: $(_qb_state present)"
     else
-        printf "✗ Plugins directory: missing\n"
+        _qb_line fail "Plugins directory: $(_qb_state missing)"
         issues=1
     fi
 
     local days
     if days="$(_qb_image_age_days)"; then
         if (( days >= QB_IMAGE_STALE_DAYS )); then
-            printf "→ Image age: %s day(s) (consider qb update)\n" "$days"
+            _qb_line info "Image age: $days day(s) (consider qb update)"
         else
-            printf "✓ Image age: %s day(s)\n" "$days"
+            _qb_line ok "Image age: $days day(s)"
         fi
     else
-        printf "○ Image age: unknown\n"
+        _qb_line off "Image age: $(_qb_state unknown)"
     fi
-    
+
     if ! _qb_api_key_usable; then
-        printf "✗ API key: missing or not set\n"
+        _qb_line fail "API key: missing or not set"
         _qb_api_key_hint
         issues=1
     elif ! _qb_webui_ready; then
-        printf "✓ API key file: present\n"
-        printf "○ API: skipped (WebUI unavailable)\n"
+        _qb_line ok "API key file: $(_qb_state present)"
+        _qb_line off "API: $(_qb_state skipped) (WebUI unavailable)"
     elif _qb_api_ok; then
-        printf "✓ API key file: present\n"
-        printf "✓ API: authorized\n"
+        _qb_line ok "API key file: $(_qb_state present)"
+        _qb_line ok "API: authorized"
     else
-        printf "✓ API key file: present\n"
-        printf "✗ API: authorization failed (incorrect or revoked key)\n"
+        _qb_line ok "API key file: $(_qb_state present)"
+        _qb_line fail "API: authorization failed (incorrect or revoked key)"
         _qb_api_key_hint
         issues=1
     fi
@@ -1383,7 +1590,7 @@ end run
 APPLESCRIPT
     )"; then
         _qb_success "WebUI column layout applied"
-        printf "→ Only needed again if Safari site data is cleared\n"
+        _qb_line info "Only needed again if Safari site data is cleared"
         return 0
     fi
 
@@ -1425,7 +1632,9 @@ _qb_help() {
 qb() {
     emulate -L zsh
 
+    _qb_refresh_style
     _qb_refresh_downloads
+    _qb_update_color_ok
 
     case "$1" in
         start)
@@ -1497,7 +1706,7 @@ qb() {
             ;;
 
         *)
-            printf "✗ Unknown command: %s\n" "$1"
+            _qb_line fail "Unknown command: $1"
             printf "Run: qb help\n"
             return 1
             ;;
@@ -1523,4 +1732,6 @@ if (( $+functions[compdef] )); then
     compdef _qb_complete qb
 fi
 
+_qb_refresh_style
 _qb_refresh_downloads
+_qb_update_color_ok
