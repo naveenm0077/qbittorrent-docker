@@ -19,8 +19,7 @@ downloads/
 .DS_Store
 
 # Personal planning notes (not part of the shipped project)
-roadmap.txt
-shelf.txt
+notes/
 
 # Editor / agent local config
 .cursor/
