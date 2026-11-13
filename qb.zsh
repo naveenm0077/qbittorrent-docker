@@ -1968,16 +1968,7 @@ _qb_search_enabled_count() {
         return 1
     }
 
-    python3 - "$response" <<'PY'
-import json
-import sys
-try:
-    plugins = json.loads(sys.argv[1])
-except Exception:
-    print(0)
-    sys.exit(0)
-print(sum(1 for p in plugins if p.get("enabled")))
-PY
+    printf '%s' "$response" | python3 "$QB_PY" search-enabled-count
 }
 
 _qb_search() {
@@ -2111,14 +2102,7 @@ _qb_search() {
     }
 
     job_id="$(
-        python3 - "$start_json" <<'PY'
-import json
-import sys
-try:
-    print(json.loads(sys.argv[1]).get("id") or "")
-except Exception:
-    sys.exit(1)
-PY
+        printf '%s' "$start_json" | python3 "$QB_PY" search-job-id
     )" || {
         _qb_failure "Failed to parse search job id"
         return 1
@@ -2138,18 +2122,7 @@ PY
     while (( elapsed < timeout )); do
         status_json="$(_qb_api_curl "/api/v2/search/status?id=${job_id}")" || break
         job_status="$(
-            python3 - "$status_json" <<'PY'
-import json
-import sys
-try:
-    data = json.loads(sys.argv[1])
-    if isinstance(data, list) and data:
-        print(data[0].get("status") or "")
-    elif isinstance(data, dict):
-        print(data.get("status") or "")
-except Exception:
-    print("")
-PY
+            printf '%s' "$status_json" | python3 "$QB_PY" search-status
         )"
 
         if (( watch )); then
@@ -2203,53 +2176,14 @@ PY
 _qb_search_sort_json() {
     local results_json="$1"
 
-    python3 - "$results_json" <<'PY'
-import json
-import sys
-
-try:
-    data = json.loads(sys.argv[1])
-    rows = list(data.get("results") or [])
-except Exception as e:
-    print(f"Failed to parse results: {e}", file=sys.stderr)
-    sys.exit(1)
-
-def seeds(row):
-    try:
-        return int(row.get("nbSeeders") or 0)
-    except (TypeError, ValueError):
-        return 0
-
-rows.sort(key=seeds, reverse=True)
-print(json.dumps(rows, separators=(",", ":")))
-PY
+    printf '%s' "$results_json" | python3 "$QB_PY" search-sort
 }
 
 _qb_search_url_at() {
     local sorted_json="$1"
     local idx="$2"
 
-    python3 - "$sorted_json" "$idx" <<'PY'
-import json
-import sys
-
-try:
-    rows = json.loads(sys.argv[1])
-except Exception as e:
-    print(f"parse error: {e}", file=sys.stderr)
-    sys.exit(1)
-
-idx = int(sys.argv[2])
-if idx < 1 or idx > len(rows):
-    print(f"No result #{idx} (have {len(rows)})", file=sys.stderr)
-    sys.exit(1)
-
-url = (rows[idx - 1].get("fileUrl") or "").strip()
-if not url:
-    print("Result has no magnet/file URL", file=sys.stderr)
-    sys.exit(1)
-print(url)
-PY
+    printf '%s' "$sorted_json" | python3 "$QB_PY" search-url "$idx"
 }
 
 # Print one page of a sorted results JSON array.
@@ -2261,128 +2195,7 @@ _qb_search_print_page() {
     local cols="$4"
     local status_note="${5:-}"
 
-    python3 - "$sorted_json" "$page" "$page_size" "$cols" "$status_note" <<'PY'
-import json
-import sys
-from urllib.parse import urlparse
-
-
-def human_bytes(n):
-    try:
-        n = float(n)
-    except (TypeError, ValueError):
-        return "?"
-    if n < 0:
-        return "?"
-    units = ["B", "KiB", "MiB", "GiB", "TiB"]
-    for unit in units:
-        if n < 1024 or unit == units[-1]:
-            if unit == "B":
-                return f"{int(n)} {unit}"
-            return f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n:.1f} TiB"
-
-
-def short_site(url):
-    if not url:
-        return "-"
-    try:
-        host = urlparse(url).netloc or url
-    except Exception:
-        host = url
-    if host.startswith("www."):
-        host = host[4:]
-    return host
-
-
-def trunc(text, width):
-    text = str(text)
-    if width <= 1:
-        return "…"
-    if len(text) <= width:
-        return text
-    return text[: width - 1] + "…"
-
-
-try:
-    rows = json.loads(sys.argv[1])
-except Exception as e:
-    print(f"Failed to parse results: {e}", file=sys.stderr)
-    sys.exit(1)
-
-page = int(sys.argv[2])
-page_size = int(sys.argv[3])
-cols = int(sys.argv[4] or 80)
-status_note = sys.argv[5] if len(sys.argv) > 5 else ""
-
-total = len(rows)
-pages = max(1, (total + page_size - 1) // page_size) if total else 1
-if page < 0:
-    page = 0
-if page >= pages:
-    page = pages - 1
-
-start = page * page_size
-chunk = rows[start : start + page_size]
-
-if not rows:
-    print("No results.")
-    sys.exit(0)
-
-# Fixed columns: # SIZE SEEDS LEECH SITE — NAME gets the remainder.
-idx_w = max(2, len(str(start + len(chunk))))
-size_w = 8
-seeds_w = 5
-leech_w = 5
-site_w = 18
-gap = 2
-fixed = idx_w + size_w + seeds_w + leech_w + site_w + gap * 5
-name_w = max(12, cols - fixed)
-if name_w > 60:
-    name_w = 60
-
-headers = ("#", "NAME", "SIZE", "SEEDS", "LEECH", "SITE")
-widths = [idx_w, name_w, size_w, seeds_w, leech_w, site_w]
-
-def cell(text, width, align="left", cut=False):
-    text = str(text)
-    if cut:
-        text = trunc(text, width)
-    if align == "right":
-        return text.rjust(width)[:width]
-    return text.ljust(width)[:width]
-
-print(f"Results: {total}  page {page + 1}/{pages}" + (f"  [{status_note}]" if status_note else ""))
-print("  ".join(cell(h, widths[i]) for i, h in enumerate(headers)))
-print("  ".join("-" * w for w in widths))
-
-for i, row in enumerate(chunk):
-    n = start + i + 1
-    name = row.get("fileName") or "unknown"
-    size = human_bytes(row.get("fileSize"))
-    try:
-        seeds = int(row.get("nbSeeders") or 0)
-    except (TypeError, ValueError):
-        seeds = 0
-    try:
-        leech = int(row.get("nbLeechers") or 0)
-    except (TypeError, ValueError):
-        leech = 0
-    site = short_site(row.get("siteUrl") or "")
-    print(
-        "  ".join(
-            [
-                cell(n, idx_w, "right"),
-                cell(name, name_w, cut=True),
-                cell(size, size_w, "right"),
-                cell(seeds, seeds_w, "right"),
-                cell(leech, leech_w, "right"),
-                cell(site, site_w, cut=True),
-            ]
-        )
-    )
-PY
+    printf '%s' "$sorted_json" | python3 "$QB_PY" search-page "$page" "$page_size" "$cols" "$status_note"
 }
 
 # Interactive pagination (TTY): table + prompt for # / < > / q.
@@ -2398,14 +2211,7 @@ _qb_search_browse() {
     local add_url
 
     total="$(
-        python3 - "$sorted_json" <<'PY'
-import json
-import sys
-try:
-    print(len(json.loads(sys.argv[1])))
-except Exception:
-    print(0)
-PY
+        printf '%s' "$sorted_json" | python3 "$QB_PY" search-count
     )"
 
     if (( total == 0 )); then

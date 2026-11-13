@@ -1,0 +1,217 @@
+{
+ "results": [
+  {
+   "fileName": "Debian 12.0 netinst amd64 ISO",
+   "fileSize": 314572800,
+   "nbSeeders": "1000",
+   "nbLeechers": 0,
+   "siteUrl": "https://www.example-tracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000000&dn=debian-0",
+   "descrLink": "https://example.org/t/0"
+  },
+  {
+   "fileName": "Debian 11.1 netinst amd64 ISO",
+   "fileSize": 321572800,
+   "nbSeeders": 963,
+   "nbLeechers": 3,
+   "siteUrl": "https://linuxtracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000001&dn=debian-1",
+   "descrLink": "https://example.org/t/1"
+  },
+  {
+   "fileName": "Debian 10.2 netinst amd64 ISO",
+   "fileSize": 328572800,
+   "nbSeeders": 926,
+   "nbLeechers": 6,
+   "siteUrl": "http://archive.example.net:8080",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000002&dn=debian-2",
+   "descrLink": "https://example.org/t/2"
+  },
+  {
+   "fileName": "Debian 12.3 netinst amd64 ISO",
+   "fileSize": 335572800,
+   "nbSeeders": 889,
+   "nbLeechers": 9,
+   "siteUrl": "",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000003&dn=debian-3",
+   "descrLink": "https://example.org/t/3"
+  },
+  {
+   "fileName": "Debian 11.4 netinst amd64 ISO with an extremely long descriptive release name that keeps going",
+   "fileSize": 342572800,
+   "nbSeeders": "852",
+   "nbLeechers": 12,
+   "siteUrl": "https://www.example-tracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000004&dn=debian-4",
+   "descrLink": "https://example.org/t/4"
+  },
+  {
+   "fileName": "Debian 10.5 netinst amd64 ISO",
+   "fileSize": 349572800,
+   "nbSeeders": 815,
+   "nbLeechers": 15,
+   "siteUrl": "https://linuxtracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000005&dn=debian-5",
+   "descrLink": "https://example.org/t/5"
+  },
+  {
+   "fileName": "Debian 12.6 netinst amd64 ISO",
+   "fileSize": -1,
+   "nbSeeders": 778,
+   "nbLeechers": 18,
+   "siteUrl": "http://archive.example.net:8080",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000006&dn=debian-6",
+   "descrLink": "https://example.org/t/6"
+  },
+  {
+   "fileName": "Debian 11.7 netinst amd64 ISO",
+   "fileSize": 363572800,
+   "nbSeeders": 741,
+   "nbLeechers": 21,
+   "siteUrl": "",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000007&dn=debian-7",
+   "descrLink": "https://example.org/t/7"
+  },
+  {
+   "fileName": "Debian 10.8 netinst amd64 ISO",
+   "fileSize": 370572800,
+   "nbSeeders": "704",
+   "nbLeechers": 24,
+   "siteUrl": "https://www.example-tracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000008&dn=debian-8",
+   "descrLink": "https://example.org/t/8"
+  },
+  {
+   "fileName": "Debian 12.9 netinst amd64 ISO",
+   "fileSize": 377572800,
+   "nbSeeders": 667,
+   "nbLeechers": "n/a",
+   "siteUrl": "https://linuxtracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000009&dn=debian-9",
+   "descrLink": "https://example.org/t/9"
+  },
+  {
+   "fileName": "Debian 11.10 netinst amd64 ISO",
+   "fileSize": 384572800,
+   "nbSeeders": 630,
+   "nbLeechers": 30,
+   "siteUrl": "http://archive.example.net:8080",
+   "fileUrl": "magnet:?xt=urn:btih:000000000000000000000000000000000000000a&dn=debian-10",
+   "descrLink": "https://example.org/t/10"
+  },
+  {
+   "fileName": "Debian 10.11 netinst amd64 ISO",
+   "fileSize": 391572800,
+   "nbSeeders": 593,
+   "nbLeechers": 33,
+   "siteUrl": "",
+   "fileUrl": "",
+   "descrLink": "https://example.org/t/11"
+  },
+  {
+   "fileName": "Debian 12.12 netinst amd64 ISO",
+   "fileSize": 398572800,
+   "nbSeeders": "556",
+   "nbLeechers": 36,
+   "siteUrl": "https://www.example-tracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:000000000000000000000000000000000000000c&dn=debian-12",
+   "descrLink": "https://example.org/t/12"
+  },
+  {
+   "fileName": "Debian 11.13 netinst amd64 ISO",
+   "fileSize": 405572800,
+   "nbSeeders": 519,
+   "nbLeechers": 39,
+   "siteUrl": "https://linuxtracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:000000000000000000000000000000000000000d&dn=debian-13",
+   "descrLink": "https://example.org/t/13"
+  },
+  {
+   "fileName": "Debian 10.14 netinst amd64 ISO",
+   "fileSize": 412572800,
+   "nbSeeders": 482,
+   "nbLeechers": 42,
+   "siteUrl": "http://archive.example.net:8080",
+   "fileUrl": "magnet:?xt=urn:btih:000000000000000000000000000000000000000e&dn=debian-14",
+   "descrLink": "https://example.org/t/14"
+  },
+  {
+   "fileName": "Debian 12.15 netinst amd64 ISO",
+   "fileSize": 419572800,
+   "nbSeeders": 445,
+   "nbLeechers": 45,
+   "siteUrl": "",
+   "fileUrl": "magnet:?xt=urn:btih:000000000000000000000000000000000000000f&dn=debian-15",
+   "descrLink": "https://example.org/t/15"
+  },
+  {
+   "fileName": "Debian 11.16 netinst amd64 ISO",
+   "fileSize": 426572800,
+   "nbSeeders": "408",
+   "nbLeechers": 48,
+   "siteUrl": "https://www.example-tracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000010&dn=debian-16",
+   "descrLink": "https://example.org/t/16"
+  },
+  {
+   "fileName": "Debian 10.17 netinst amd64 ISO",
+   "fileSize": 433572800,
+   "nbSeeders": 371,
+   "nbLeechers": 51,
+   "siteUrl": "https://linuxtracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000011&dn=debian-17",
+   "descrLink": "https://example.org/t/17"
+  },
+  {
+   "fileName": "Debian 12.18 netinst amd64 ISO",
+   "fileSize": 440572800,
+   "nbSeeders": 334,
+   "nbLeechers": 54,
+   "siteUrl": "http://archive.example.net:8080",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000012&dn=debian-18",
+   "descrLink": "https://example.org/t/18"
+  },
+  {
+   "fileName": "Debian 11.19 netinst amd64 ISO",
+   "fileSize": 447572800,
+   "nbSeeders": 297,
+   "nbLeechers": 57,
+   "siteUrl": "",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000013&dn=debian-19",
+   "descrLink": "https://example.org/t/19"
+  },
+  {
+   "fileName": "Debian 10.20 netinst amd64 ISO",
+   "fileSize": 454572800,
+   "nbSeeders": "260",
+   "nbLeechers": 60,
+   "siteUrl": "https://www.example-tracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000014&dn=debian-20",
+   "descrLink": "https://example.org/t/20"
+  },
+  {
+   "fileName": "Debian 12.21 netinst amd64 ISO",
+   "fileSize": 461572800,
+   "nbSeeders": 223,
+   "nbLeechers": 63,
+   "siteUrl": "https://linuxtracker.org",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000015&dn=debian-21",
+   "descrLink": "https://example.org/t/21"
+  },
+  {
+   "fileName": "Debian 11.22 netinst amd64 ISO",
+   "fileSize": 468572800,
+   "nbSeeders": 186,
+   "nbLeechers": 66,
+   "siteUrl": "http://archive.example.net:8080",
+   "fileUrl": "magnet:?xt=urn:btih:0000000000000000000000000000000000000016&dn=debian-22",
+   "descrLink": "https://example.org/t/22"
+  },
+  {
+   "fileName": null,
+   "nbSeeders": null
+  }
+ ],
+ "status": "Stopped",
+ "total": 24
+}

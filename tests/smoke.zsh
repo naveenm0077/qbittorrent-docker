@@ -433,6 +433,53 @@ python3 -I -c 'import json; print(json.dumps([{"name": "t%05d-%s" % (i, "x" * 12
 out="$(qbrun "_qb_torrents_info() { cat ${(q)TMP}/big.json; }; _qb_torrents_print | wc -l | tr -d ' '")"
 expect_eq "2 MB torrent list (over ARG_MAX) prints all 4000 torrents" "8000" "$out"
 
+# 7b. Search (qb_json.py search-*), through qb.zsh with a stubbed API -------
+printf '\nSearch\n'
+
+search_run() {
+    qbrun "
+        F=${(q)FIX}
+        _qb_require_stack() { return 0; }; _qb_require_api() { return 0; }
+        _qb_spinner() { :; }
+        _qb_add() { print -r -- \"ADD: \$1\"; }
+        _qb_api_post() { [[ \$1 == /api/v2/search/start ]] && print '{\"id\":7}'; }
+        _qb_api_curl() {
+            case \$1 in
+                /api/v2/search/plugins) cat \$F/plugins.json ;;
+                /api/v2/search/status*) print '[{\"id\":7,\"status\":\"Stopped\"}]' ;;
+                /api/v2/search/results*) cat \$F/search-results.json ;;
+            esac
+        }
+        S=\"\$(_qb_search_sort_json \"\$(<\$F/search-results.json)\")\"
+        $1
+    " </dev/null
+}
+
+expect_eq "enabled plugin count" "1" "$(search_run _qb_search_enabled_count)"
+expect_eq "results sorted by seeds, desc" "1000 963 926" \
+    "$(search_run 'print -r -- "$S" | python3 -c "import json,sys; print(*[int(r[\"nbSeeders\"] or 0) for r in json.load(sys.stdin)[:3]])"')"
+
+out="$(search_run '_qb_search_print_page "$S" 0 10 80 Running')"
+if [[ "${${(f)out}[1]}" == "Results: 24  page 1/3  [Running]" && ${#${(f)out}} -eq 13 &&
+      "$out" == *" 7  Debian 12.6 netinst amd64 ISO            ?    778     18  archive.example.n…"* ]]; then
+    pass "results page: header, 10 rows, unknown size shows ?"
+else
+    fail "results page: header, 10 rows, unknown size shows ?" "$out"
+fi
+expect_eq "page past the end is clamped to the last page" "Results: 24  page 3/3" \
+    "$(search_run '_qb_search_print_page "$S" 99 10 80 ""' | head -n 1)"
+
+expect_eq "pick result #2" "magnet:?xt=urn:btih:0000000000000000000000000000000000000001&dn=debian-1" \
+    "$(search_run '_qb_search_url_at "$S" 2')"
+expect_eq "pick out-of-range result" "No result #99 (have 24)" "$(search_run '_qb_search_url_at "$S" 99 2>&1')"
+
+out="$(search_run '_qb_search --add 2 debian iso; print "rc=$?"')"
+if [[ "$out" == *"Search finished"* && "$out" == *"ADD: magnet:?xt=urn:btih:0000000000000000000000000000000000000001&dn=debian-1"* ]]; then
+    pass "qb search --add 2: full flow adds the second result"
+else
+    fail "qb search --add 2: full flow adds the second result" "$out"
+fi
+
 # 8. Read-only commands against the real Docker state -----------------------
 printf '\nRead-only commands\n'
 

@@ -12,6 +12,13 @@ Usage (normally called by qb.zsh):
     python3 qb_json.py plugins             < search/plugins JSON
     python3 qb_json.py image-age <created>   (Docker image Created timestamp)
     python3 qb_json.py images                (runs docker itself)
+    python3 qb_json.py search-enabled-count < search/plugins JSON
+    python3 qb_json.py search-job-id        < search/start JSON
+    python3 qb_json.py search-status        < search/status JSON
+    python3 qb_json.py search-sort          < search/results JSON  (-> sorted array)
+    python3 qb_json.py search-count         < sorted array
+    python3 qb_json.py search-url <n>       < sorted array
+    python3 qb_json.py search-page <page> <page-size> <cols> [note] < sorted array
 """
 
 import json
@@ -298,6 +305,188 @@ def cmd_images(args):
     return 0
 
 
+# --- Search -------------------------------------------------------------------
+
+def cmd_search_enabled_count(args):
+    """Number of enabled plugins (0 on bad input)."""
+    try:
+        plugins = read_json_stdin()
+    except Exception:
+        print(0)
+        return 0
+    print(sum(1 for p in plugins if p.get("enabled")))
+    return 0
+
+
+def cmd_search_job_id(args):
+    """Job id from /search/start (exit 1 on bad input)."""
+    try:
+        print(read_json_stdin().get("id") or "")
+    except Exception:
+        return 1
+    return 0
+
+
+def cmd_search_status(args):
+    """Job status from /search/status ("" on bad input)."""
+    try:
+        data = read_json_stdin()
+        if isinstance(data, list) and data:
+            print(data[0].get("status") or "")
+        elif isinstance(data, dict):
+            print(data.get("status") or "")
+    except Exception:
+        print("")
+    return 0
+
+
+def search_seeds(row):
+    try:
+        return int(row.get("nbSeeders") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def cmd_search_sort(args):
+    """/search/results JSON -> compact JSON array sorted by seeds (desc)."""
+    try:
+        rows = list(read_json_stdin().get("results") or [])
+    except Exception as e:
+        print(f"Failed to parse results: {e}", file=sys.stderr)
+        return 1
+    rows.sort(key=search_seeds, reverse=True)
+    print(json.dumps(rows, separators=(",", ":")))
+    return 0
+
+
+def cmd_search_count(args):
+    """Number of rows in a sorted results array (0 on bad input)."""
+    try:
+        print(len(read_json_stdin()))
+    except Exception:
+        print(0)
+    return 0
+
+
+def cmd_search_url(args):
+    """fileUrl of result #N (1-based) in a sorted results array."""
+    try:
+        rows = read_json_stdin()
+    except Exception as e:
+        print(f"parse error: {e}", file=sys.stderr)
+        return 1
+
+    idx = int(args[0])
+    if idx < 1 or idx > len(rows):
+        print(f"No result #{idx} (have {len(rows)})", file=sys.stderr)
+        return 1
+
+    url = (rows[idx - 1].get("fileUrl") or "").strip()
+    if not url:
+        print("Result has no magnet/file URL", file=sys.stderr)
+        return 1
+    print(url)
+    return 0
+
+
+def cmd_search_page(args):
+    """One page of a sorted results array. args: page (0-based) page_size cols [status_note]."""
+    from urllib.parse import urlparse
+
+    def size_text(n):
+        # qBittorrent reports unknown sizes as -1.
+        try:
+            if float(n) < 0:
+                return "?"
+        except (TypeError, ValueError):
+            return "?"
+        return human_bytes(n)
+
+    def short_site(url):
+        if not url:
+            return "-"
+        try:
+            host = urlparse(url).netloc or url
+        except Exception:
+            host = url
+        if host.startswith("www."):
+            host = host[4:]
+        return host
+
+    def trunc(text, width):
+        text = str(text)
+        if width <= 1:
+            return "…"
+        if len(text) <= width:
+            return text
+        return text[: width - 1] + "…"
+
+    try:
+        rows = read_json_stdin()
+    except Exception as e:
+        print(f"Failed to parse results: {e}", file=sys.stderr)
+        return 1
+
+    page = int(args[0])
+    page_size = int(args[1])
+    cols = int(args[2] or 80)
+    status_note = args[3] if len(args) > 3 else ""
+
+    total = len(rows)
+    pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    if page < 0:
+        page = 0
+    if page >= pages:
+        page = pages - 1
+
+    start = page * page_size
+    chunk = rows[start : start + page_size]
+
+    if not rows:
+        print("No results.")
+        return 0
+
+    # Fixed columns: # SIZE SEEDS LEECH SITE; NAME gets the remainder (max 60).
+    idx_w = max(2, len(str(start + len(chunk))))
+    size_w, seeds_w, leech_w, site_w, gap = 8, 5, 5, 18, 2
+    fixed = idx_w + size_w + seeds_w + leech_w + site_w + gap * 5
+    name_w = min(max(12, cols - fixed), 60)
+
+    headers = ("#", "NAME", "SIZE", "SEEDS", "LEECH", "SITE")
+    widths = [idx_w, name_w, size_w, seeds_w, leech_w, site_w]
+
+    def cell(text, width, align="left", cut=False):
+        text = str(text)
+        if cut:
+            text = trunc(text, width)
+        if align == "right":
+            return text.rjust(width)[:width]
+        return text.ljust(width)[:width]
+
+    print(f"Results: {total}  page {page + 1}/{pages}" + (f"  [{status_note}]" if status_note else ""))
+    print("  ".join(cell(h, widths[i]) for i, h in enumerate(headers)))
+    print("  ".join("-" * w for w in widths))
+
+    for i, row in enumerate(chunk):
+        try:
+            leech = int(row.get("nbLeechers") or 0)
+        except (TypeError, ValueError):
+            leech = 0
+        print(
+            "  ".join(
+                [
+                    cell(start + i + 1, idx_w, "right"),
+                    cell(row.get("fileName") or "unknown", name_w, cut=True),
+                    cell(size_text(row.get("fileSize")), size_w, "right"),
+                    cell(search_seeds(row), seeds_w, "right"),
+                    cell(leech, leech_w, "right"),
+                    cell(short_site(row.get("siteUrl") or ""), site_w, cut=True),
+                ]
+            )
+        )
+    return 0
+
+
 COMMANDS = {
     "torrents": cmd_torrents,
     "transfer": cmd_transfer,
@@ -305,6 +494,13 @@ COMMANDS = {
     "plugins": cmd_plugins,
     "image-age": cmd_image_age,
     "images": cmd_images,
+    "search-enabled-count": cmd_search_enabled_count,
+    "search-job-id": cmd_search_job_id,
+    "search-status": cmd_search_status,
+    "search-sort": cmd_search_sort,
+    "search-count": cmd_search_count,
+    "search-url": cmd_search_url,
+    "search-page": cmd_search_page,
 }
 
 
