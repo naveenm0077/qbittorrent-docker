@@ -3131,15 +3131,34 @@ _qb_repair() {
         _qb_failure "qBittorrent directory not found"
         return 1
     }
-    
+
     _qb_require_port_free || return 1
 
     _qb_spinner "Recreating qBittorrent..."
-    
+
     if ! _qb_compose up -d --force-recreate; then
-        _qb_failure "Failed to recreate qBittorrent"
+        # Second level: a missing or broken local image is the usual cause,
+        # so pull a fresh copy and try once more before giving up.
+        _qb_cleanup_spinner
+        printf "\r\033[2K%s %s\n" "$(_qb_mark info)" "Recreate failed; pulling image and retrying"
         _qb_compose_error
-        return 1
+
+        _qb_spinner "Pulling qBittorrent image..."
+
+        if ! _qb_compose pull; then
+            _qb_failure "Failed to pull qBittorrent image"
+            _qb_compose_error
+            return 1
+        fi
+
+        _qb_success "qBittorrent image pulled"
+        _qb_spinner "Recreating qBittorrent (retry)..."
+
+        if ! _qb_compose up -d --force-recreate; then
+            _qb_failure "Failed to recreate qBittorrent"
+            _qb_compose_error
+            return 1
+        fi
     fi
     
     _qb_success "qBittorrent recreated"

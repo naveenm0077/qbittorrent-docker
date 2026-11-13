@@ -205,7 +205,43 @@ expect_eq "long output is cut to the last 8 lines" "8 line 5 line 12" \
 out="$(qbrun 'docker() { print "noisy"; return 0; }; _qb_compose up -d && print -r -- "rc=0"')"
 expect_eq "success prints nothing" "rc=0" "$out"
 
-# 6. Read-only commands against the real Docker state -----------------------
+# 6. qb repair pull-and-retry (fake docker; nothing real runs) ---------------
+printf '\nRepair retry\n'
+
+repair_run() {
+    : > "$TMP/calls"
+    qbrun "
+        MODE=$1; CALLS=${(q)TMP}/calls
+        _qb_docker_running() { return 0; }
+        _qb_container_running() { return 1; }
+        _qb_container_exists() { return 1; }
+        _qb_require_port_free() { return 0; }
+        _qb_wait_for_webui() { return 0; }
+        _qb_present_webui() { :; }
+        _qb_spinner() { :; }
+        docker() {
+            print -r -- \"\$*\" >> \$CALLS
+            case \"\$*\" in
+                'compose pull') [[ \$MODE == pullfail ]] && return 1; return 0 ;;
+                'compose up -d --force-recreate')
+                    (( \$(grep -c 'compose up' \$CALLS) >= 2 )) && [[ \$MODE == retryok ]] && return 0
+                    print 'No such image' >&2; return 1 ;;
+            esac
+            return 0
+        }
+        _qb_repair >/dev/null
+        print -r -- \"rc=\$? \${(j:|:)\${(f)\"\$(<\$CALLS)\"}}\"
+    "
+}
+
+expect_eq "recreate fails, pull + retry succeeds" \
+    "rc=0 rm -f qbittorrent|compose up -d --force-recreate|compose pull|compose up -d --force-recreate" \
+    "$(repair_run retryok)"
+expect_eq "pull fails: stop without a second recreate" \
+    "rc=1 rm -f qbittorrent|compose up -d --force-recreate|compose pull" \
+    "$(repair_run pullfail)"
+
+# 7. Read-only commands against the real Docker state -----------------------
 printf '\nRead-only commands\n'
 
 for cmd in status doctor; do

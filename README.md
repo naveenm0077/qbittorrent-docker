@@ -185,7 +185,7 @@ Torrent ids are a **hash prefix** or a **unique name substring**.
 | `qb update` | Check registry digests first (no layer download); pull/recreate only when newer. If the check fails, falls back to pull-then-compare. Blocks while downloads are active; removes the previous image when safe. Run occasionally (for example monthly); `qb start` never auto-updates. |
 | `qb images` | List local qBittorrent images (including dangling) with sizes and a unique total. |
 | `qb prune` | Remove unused local qBittorrent images; always keeps the image currently used by the container/compose service. |
-| `qb repair` | Recreate the qBittorrent container without touching downloads or configuration. |
+| `qb repair` | Recreate the qBittorrent container without touching downloads or configuration. If the recreate fails, pulls the image once and retries (a pull can bring a newer `:latest` build). |
 | `qb doctor` | Check Docker, container, WebUI, mounts, API auth, the WebUI port, and local directories. |
 | `qb layout` | Copy the column layout script to the clipboard and print the Web Inspector steps (see below). |
 | `qb help` | Show the command list. |
@@ -300,7 +300,7 @@ The smoke test is read-only: it never starts, stops, or recreates Docker or the 
 - That the command dispatcher, Tab completion, `qb help`, and the README command table list the same commands.
 - Parsing of `.env.qbittorrent` settings (quotes, spaces, CRLF, `~` paths, invalid values falling back to defaults).
 - WebUI port owner detection, using a temporary local listener on port 18555.
-- Compose error output on failure (with a stand-in `docker` function, so nothing real runs).
+- Compose error output on failure, and the `qb repair` pull-and-retry path (with a stand-in `docker` function, so nothing real runs).
 - That `qb status` and `qb doctor` run without shell errors, and that stack commands fail fast with `Run: qb start` when Docker is down.
 
 It exits non-zero when any check fails.
