@@ -355,7 +355,6 @@ fmt_run() {
     qbrun "
         F=${(q)FIX}
         _qb_require_stack() { return 0; }; _qb_require_api() { return 0; }
-        _qb_resolve_hashes() { print -r -- \$1; }
         _qb_api_curl() {
             case \$1 in
                 /api/v2/transfer/info) cat \$F/transfer.json ;;
@@ -381,7 +380,7 @@ fi
 
 expect_eq "transfer line" "→ Transfer: ↓7.0 MiB/s  ↑50.0 KiB/s  alt-limits=on" "$(fmt_run _qb_transfer_print)"
 
-out="$(fmt_run '_qb_show a1b2c3d4')"
+out="$(fmt_run '_qb_resolve_hashes() { print -r -- $1; }; _qb_show a1b2c3d4')"
 if [[ "${${(f)out}[1]}" == "ubuntu-24.04.1-desktop-amd64.iso" && "$out" == *"  ratio: 0.040  added: "* &&
       "$out" == *"  files (45):"* && "$out" == *"    … 5 more" && ${#${(f)out}} -eq 50 ]]; then
     pass "show: properties, ratio, first 40 of 45 files"
@@ -425,6 +424,24 @@ if [[ "$out" == *"latest           aaaaaaaaaaaa  204.8 MiB  3 weeks ago"* &&
 else
     fail "images: tagged + dangling rows and totals" "$out"
 fi
+
+expect_eq "active download count" "4" "$(fmt_run '_qb_active_download_count "$(<$F/torrents.json)"')"
+expect_eq "active download count, bad JSON gives -1" "-1" "$(fmt_run '_qb_active_download_count garbage')"
+
+expect_eq "resolve ids: hash prefix, name (any case), several at once" \
+    "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678|0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c" \
+    "$(fmt_run '_qb_resolve_hashes a1b2 DEBIAN')"
+out="$(fmt_run '_qb_resolve_hashes iso 2>&1; print "rc=$?"')"
+if [[ "$out" == "Ambiguous id: iso"*"a1b2c3d4  ubuntu"*"0f1e2d3c  debian"*"rc=1" ]]; then
+    pass "resolve ids: ambiguous id lists the matches, rc=1"
+else
+    fail "resolve ids: ambiguous id lists the matches, rc=1" "$out"
+fi
+expect_eq "resolve ids: no match" "No torrent matches: zzz rc=1" \
+    "$(fmt_run '_qb_resolve_hashes zzz 2>&1; print "rc=$?"' | tr '\n' ' ' | sed 's/ $//')"
+
+# All Python lives in qb_json.py; qb.zsh pipes JSON to it on stdin.
+expect_eq "no embedded Python left in qb.zsh" "0" "$(grep -c "python3 - " "$QB")"
 
 # Large responses: JSON goes to Python on stdin, not argv (ARG_MAX is 1 MiB on macOS).
 python3 -I -c 'import json; print(json.dumps([{"name": "t%05d-%s" % (i, "x" * 120), "hash": "%040x" % i,

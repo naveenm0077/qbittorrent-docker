@@ -279,7 +279,7 @@ The Web App's own settings window has no developer options; the inspector is rea
 | --- | --- |
 | `compose.yaml` | qBittorrent Docker service definition. |
 | `qb.zsh` | `qb` CLI commands. |
-| `qb_json.py` | Python helpers used by `qb.zsh` to format API and Docker JSON (torrents, show, transfer line, plugins, images, image age, and search: job status, sorting, result pages, picking a result). Standard library only; JSON is read from stdin. |
+| `qb_json.py` | Python helpers used by `qb.zsh` to format API and Docker JSON (torrents, show, transfer line, plugins, images, image age, torrent id resolution, active download count, and search: job status, sorting, result pages, picking a result). All of the CLI's Python lives here; `qb.zsh` contains none. Standard library only; JSON is read from stdin. |
 | `config/` | Persistent qBittorrent configuration and session state. |
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
 | `plugins/` | Local search plugins (third-party Python — review before enabling). Use `qb plugins` / `qb search`. |
@@ -303,7 +303,7 @@ The smoke test is read-only: it never starts, stops, or recreates Docker or the 
 - Parsing of `.env.qbittorrent` settings (quotes, spaces, CRLF, `~` paths, invalid values falling back to defaults), and the user, group and timezone defaults.
 - That `compose.yaml` receives the port, user, group and timezone from `qb`, and its fallbacks when run without `qb` (`docker compose config`; no Docker engine needed).
 - WebUI port owner detection, using a temporary local listener on port 18555, plus another container holding the port, `qb start` / `qb repair` stopping before Compose, and the `qb doctor` port and container lines.
-- The `qb_json.py` formatters, called through `qb.zsh` with sample API responses from `tests/fixtures/` (torrents, show, transfer line, plugins, images, image age), including a torrent list larger than the 1 MiB macOS argument limit.
+- The `qb_json.py` formatters, called through `qb.zsh` with sample API responses from `tests/fixtures/` (torrents, show, transfer line, plugins, images, image age, torrent id resolution, active download count), including a torrent list larger than the 1 MiB macOS argument limit, and that `qb.zsh` has no embedded Python.
 - `qb search` with a stubbed API: sorting by seeds, result pages, picking a result, and the full `--add N` flow.
 - Compose error output on failure, and the `qb repair` pull-and-retry path (with a stand-in `docker` function, so nothing real runs).
 - That `qb status` and `qb doctor` run without shell errors, and that stack commands fail fast with `Run: qb start` when Docker is down.

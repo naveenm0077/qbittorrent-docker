@@ -827,16 +827,7 @@ _qb_torrents_info() {
 _qb_active_download_count() {
     local response="$1"
     
-    python3 - "$response" <<'PY'
-import json
-import sys
-
-try:
-    data = json.loads(sys.argv[1])
-    print(len(data))
-except Exception:
-    print(-1)
-PY
+    printf '%s' "$response" | python3 "$QB_PY" active-count
 }
 
 _qb_other_containers() {
@@ -1380,54 +1371,7 @@ _qb_resolve_hashes() {
     }
 
     resolved="$(
-        python3 - "$response" "$@" <<'PY'
-import json
-import sys
-
-try:
-    torrents = json.loads(sys.argv[1])
-except Exception as e:
-    print(f"Failed to parse torrent list: {e}", file=sys.stderr)
-    sys.exit(2)
-
-queries = sys.argv[2:]
-hashes = []
-
-for q in queries:
-    ql = q.lower()
-    matches = []
-    for t in torrents:
-        h = (t.get("hash") or "").lower()
-        name = (t.get("name") or "").lower()
-        if h.startswith(ql) or ql in name:
-            matches.append(t)
-
-    # Prefer exact hash match when present.
-    exact = [t for t in matches if (t.get("hash") or "").lower() == ql]
-    if len(exact) == 1:
-        matches = exact
-
-    if not matches:
-        print(f"No torrent matches: {q}", file=sys.stderr)
-        sys.exit(1)
-
-    # Unique by hash.
-    by_hash = {}
-    for t in matches:
-        by_hash[(t.get("hash") or "").lower()] = t
-    uniq = list(by_hash.values())
-
-    if len(uniq) > 1:
-        print(f"Ambiguous id: {q}", file=sys.stderr)
-        for t in uniq:
-            h = (t.get("hash") or "")[:8]
-            print(f"  {h}  {t.get('name') or 'unknown'}", file=sys.stderr)
-        sys.exit(1)
-
-    hashes.append(uniq[0].get("hash") or "")
-
-print("|".join(hashes))
-PY
+        printf '%s' "$response" | python3 "$QB_PY" resolve-hashes "$@"
     )" || return 1
 
     [[ -n "$resolved" ]] || return 1

@@ -12,6 +12,8 @@ Usage (normally called by qb.zsh):
     python3 qb_json.py plugins             < search/plugins JSON
     python3 qb_json.py image-age <created>   (Docker image Created timestamp)
     python3 qb_json.py images                (runs docker itself)
+    python3 qb_json.py active-count         < torrents/info JSON  (-1 on bad input)
+    python3 qb_json.py resolve-hashes <id>... < torrents/info JSON  (-> hash|hash)
     python3 qb_json.py search-enabled-count < search/plugins JSON
     python3 qb_json.py search-job-id        < search/start JSON
     python3 qb_json.py search-status        < search/status JSON
@@ -305,6 +307,64 @@ def cmd_images(args):
     return 0
 
 
+def cmd_active_count(args):
+    """Number of entries in a torrents/info list (-1 on bad input)."""
+    try:
+        print(len(read_json_stdin()))
+    except Exception:
+        print(-1)
+    return 0
+
+
+def cmd_resolve_hashes(args):
+    """Resolve ids (hash prefix or name substring) to full hashes, joined by "|".
+
+    Exit 1 when an id matches nothing or several torrents (details on stderr),
+    exit 2 when the torrent list cannot be parsed.
+    """
+    try:
+        torrents = read_json_stdin()
+    except Exception as e:
+        print(f"Failed to parse torrent list: {e}", file=sys.stderr)
+        return 2
+
+    hashes = []
+    for q in args:
+        ql = q.lower()
+        matches = []
+        for t in torrents:
+            h = (t.get("hash") or "").lower()
+            name = (t.get("name") or "").lower()
+            if h.startswith(ql) or ql in name:
+                matches.append(t)
+
+        # Prefer exact hash match when present.
+        exact = [t for t in matches if (t.get("hash") or "").lower() == ql]
+        if len(exact) == 1:
+            matches = exact
+
+        if not matches:
+            print(f"No torrent matches: {q}", file=sys.stderr)
+            return 1
+
+        # Unique by hash.
+        by_hash = {}
+        for t in matches:
+            by_hash[(t.get("hash") or "").lower()] = t
+        uniq = list(by_hash.values())
+
+        if len(uniq) > 1:
+            print(f"Ambiguous id: {q}", file=sys.stderr)
+            for t in uniq:
+                print(f"  {(t.get('hash') or '')[:8]}  {t.get('name') or 'unknown'}", file=sys.stderr)
+            return 1
+
+        hashes.append(uniq[0].get("hash") or "")
+
+    print("|".join(hashes))
+    return 0
+
+
 # --- Search -------------------------------------------------------------------
 
 def cmd_search_enabled_count(args):
@@ -495,6 +555,8 @@ COMMANDS = {
     "plugins": cmd_plugins,
     "image-age": cmd_image_age,
     "images": cmd_images,
+    "active-count": cmd_active_count,
+    "resolve-hashes": cmd_resolve_hashes,
     "search-enabled-count": cmd_search_enabled_count,
     "search-job-id": cmd_search_job_id,
     "search-status": cmd_search_status,
