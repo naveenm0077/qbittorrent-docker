@@ -405,7 +405,8 @@ _qb_refresh_downloads() {
     elif [[ "$configured" == "~" ]]; then
         QB_DOWNLOADS="$HOME"
     elif [[ "$configured" == "~/"* ]]; then
-        QB_DOWNLOADS="$HOME/${configured#~/}"
+        # Escaped: an unquoted ~ in the pattern would itself expand to $HOME.
+        QB_DOWNLOADS="$HOME/${configured#\~/}"
     else
         QB_DOWNLOADS="$configured"
     fi
