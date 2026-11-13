@@ -6,21 +6,21 @@ terminal output. API JSON is read from stdin, never from argv, so large
 responses are not limited by the OS argument size (ARG_MAX, 1 MiB on macOS).
 
 Usage (normally called by qb.zsh):
-    python3 qb_json.py torrents            < torrents/info JSON
-    python3 qb_json.py transfer <alt-mode> < transfer/info JSON
-    python3 qb_json.py show <hash>         < {"props": {...}, "files": [...]}
-    python3 qb_json.py plugins             < search/plugins JSON
-    python3 qb_json.py image-age <created>   (Docker image Created timestamp)
-    python3 qb_json.py images                (runs docker itself)
-    python3 qb_json.py active-count         < torrents/info JSON  (-1 on bad input)
-    python3 qb_json.py resolve-hashes <id>... < torrents/info JSON  (-> hash|hash)
-    python3 qb_json.py search-enabled-count < search/plugins JSON
-    python3 qb_json.py search-job-id        < search/start JSON
-    python3 qb_json.py search-status        < search/status JSON
-    python3 qb_json.py search-sort          < search/results JSON  (-> sorted array)
-    python3 qb_json.py search-count         < sorted array
-    python3 qb_json.py search-url <n>       < sorted array
-    python3 qb_json.py search-page <page> <page-size> <cols> [note] < sorted array
+    python3 lib/qb_json.py torrents            < torrents/info JSON
+    python3 lib/qb_json.py transfer <alt-mode> < transfer/info JSON
+    python3 lib/qb_json.py show <hash>         < {"props": {...}, "files": [...]}
+    python3 lib/qb_json.py plugins             < search/plugins JSON
+    python3 lib/qb_json.py image-age <created>   (Docker image Created timestamp)
+    python3 lib/qb_json.py images                (runs docker itself)
+    python3 lib/qb_json.py active-count         < torrents/info JSON  (-1 on bad input)
+    python3 lib/qb_json.py resolve-hashes <id>... < torrents/info JSON  (-> hash|hash)
+    python3 lib/qb_json.py search-enabled-count < search/plugins JSON
+    python3 lib/qb_json.py search-job-id        < search/start JSON
+    python3 lib/qb_json.py search-status        < search/status JSON
+    python3 lib/qb_json.py search-sort          < search/results JSON  (-> sorted array)
+    python3 lib/qb_json.py search-count         < sorted array
+    python3 lib/qb_json.py search-url <n>       < sorted array
+    python3 lib/qb_json.py search-page <page> <page-size> <cols> [note] < sorted array
 """
 
 import json

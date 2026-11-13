@@ -204,7 +204,7 @@ Torrent ids are a **hash prefix** or a **unique name substring**.
 
 qBittorrent’s WebUI torrent table can show many columns. Visibility and order are stored in the browser as `localStorage` keys (for example `column_name_visible_torrentsTableDiv` and `columns_order_torrentsTableDiv`). They are not part of the Docker `config/` on disk.
 
-`webui-layout.js` is a small one-shot script that writes those keys, then reloads the page. It does not change download behavior, categories, or server settings — only which torrent-list columns you see and in what order.
+`assets/webui-layout.js` is a small one-shot script that writes those keys, then reloads the page. It does not change download behavior, categories, or server settings — only which torrent-list columns you see and in what order.
 
 You only need to apply it once per browser / Web App profile, unless you clear Safari site data for `http://localhost:8090`.
 
@@ -212,7 +212,7 @@ This is optional. Skip it if you prefer the default columns.
 
 ### How the script works (customize this)
 
-Open `webui-layout.js`. There are two arrays — they do different jobs:
+Open `assets/webui-layout.js`. There are two arrays — they do different jobs:
 
 1. **`allColumns`** — every torrent-table column id the script knows about. For each key here, the script writes a visibility flag in `localStorage` (`column_<key>_visible_torrentsTableDiv`).
 2. **`wanted`** — which of those columns should be **visible**, and in **what order**. Order in this array becomes `columns_order_torrentsTableDiv`.
@@ -261,7 +261,7 @@ WebUI column ids used in `allColumns` / `wanted` (labels can vary slightly by qB
 
 ### Applying the script
 
-Safari Web Apps on current macOS do not accept Apple Events, so the script cannot be injected automatically. `qb layout` opens the Dock Web App, copies `webui-layout.js` to the clipboard, and prints the steps below.
+Safari Web Apps on current macOS do not accept Apple Events, so the script cannot be injected automatically. `qb layout` opens the Dock Web App, copies `assets/webui-layout.js` to the clipboard, and prints the steps below.
 
 ```zsh
 qb layout
@@ -280,14 +280,14 @@ The Web App's own settings window has no developer options; the inspector is rea
 | --- | --- |
 | `compose.yaml` | qBittorrent Docker service definition. |
 | `qb.zsh` | `qb` CLI commands. |
-| `qb_json.py` | Python helpers used by `qb.zsh` to format API and Docker JSON (torrents, show, transfer line, plugins, images, image age, torrent id resolution, active download count, and search: job status, sorting, result pages, picking a result). All of the CLI's Python lives here; `qb.zsh` contains none. Standard library only; JSON is read from stdin. |
+| `lib/qb_json.py` | Python helpers used by `qb.zsh` to format API and Docker JSON (torrents, show, transfer line, plugins, images, image age, torrent id resolution, active download count, and search: job status, sorting, result pages, picking a result). All of the CLI's Python lives here; `qb.zsh` contains none. Standard library only; JSON is read from stdin. |
 | `config/` | Persistent qBittorrent configuration and session state. |
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
 | `plugins/` | Local search plugins (third-party Python — review before enabling). Use `qb plugins` / `qb search`. |
-| `webui-layout.js` | Column layout script used by `qb layout`. |
+| `assets/webui-layout.js` | Column layout script used by `qb layout`. |
 | `tests/smoke.zsh` | Read-only smoke test (see [Tests](#tests)). |
 | `tests/fixtures/` | Sample qBittorrent API responses (and expected output) used by the smoke test. |
-| `.githooks/pre-commit` | Runs the smoke test before a commit that touches the CLI, Compose file, README, layout script or tests. |
+| `.githooks/pre-commit` | Runs the smoke test before a commit that touches `qb.zsh`, `compose.yaml`, the README, `lib/`, `assets/` or `tests/`. |
 | `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_PUID`, `QB_PGID`, `QB_TZ`, `QB_STYLE`, `QB_WEBUI_PORT`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`, `QB_START_UI`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
@@ -305,14 +305,14 @@ The smoke test is read-only: it never starts, stops, or recreates Docker or the 
 - Parsing of `.env.qbittorrent` settings (quotes, spaces, CRLF, `~` paths, invalid values falling back to defaults), and the user, group and timezone defaults.
 - That `compose.yaml` receives the port, user, group and timezone from `qb`, and its fallbacks when run without `qb` (`docker compose config`; no Docker engine needed).
 - WebUI port owner detection, using a temporary local listener on port 18555, plus another container holding the port, `qb start` / `qb repair` stopping before Compose, and the `qb doctor` port and container lines.
-- The `qb_json.py` formatters, called through `qb.zsh` with sample API responses from `tests/fixtures/` (torrents, show, transfer line, plugins, images, image age, torrent id resolution, active download count), including a torrent list larger than the 1 MiB macOS argument limit, and that `qb.zsh` has no embedded Python.
+- The `lib/qb_json.py` formatters, called through `qb.zsh` with sample API responses from `tests/fixtures/` (torrents, show, transfer line, plugins, images, image age, torrent id resolution, active download count), including a torrent list larger than the 1 MiB macOS argument limit, and that `qb.zsh` has no embedded Python.
 - `qb search` with a stubbed API: sorting by seeds, result pages, picking a result, and the full `--add N` flow.
 - Compose error output on failure, and the `qb repair` pull-and-retry path (with a stand-in `docker` function, so nothing real runs).
 - That `qb status` and `qb doctor` run without shell errors, and that stack commands fail fast with `Run: qb start` when Docker is down.
 
 It exits non-zero when any check fails.
 
-A versioned pre-commit hook in `.githooks/` runs the smoke test when a commit includes `qb.zsh`, `qb_json.py`, `compose.yaml`, `README.md`, `webui-layout.js` or anything under `tests/`, and blocks the commit on failure (skip once with `git commit --no-verify`). Git does not enable repository hooks automatically; enable it once per clone:
+A versioned pre-commit hook in `.githooks/` runs the smoke test when a commit includes `qb.zsh`, `compose.yaml`, `README.md`, or anything under `lib/`, `assets/` or `tests/`, and blocks the commit on failure (skip once with `git commit --no-verify`). Git does not enable repository hooks automatically; enable it once per clone:
 
 ```zsh
 git config core.hooksPath .githooks

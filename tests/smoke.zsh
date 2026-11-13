@@ -66,6 +66,8 @@ fi
 : > "$ENV_FILE"
 out="$(qbrun 'print -r -- "$QB_DIR"')"
 expect_eq "QB_DIR resolves to the repo" "$REPO" "$out"
+expect_eq "helper files exist (lib/qb_json.py, assets/webui-layout.js)" "yes yes" \
+    "$(qbrun '[[ -f $QB_PY ]] && print -n "yes " ; [[ -f $QB_LAYOUT_JS ]] && print yes')"
 
 out="$(qbrun 'qb help')"; rc=$?
 if (( rc == 0 )) && [[ "$out" == *"qb start"* ]]; then
@@ -649,8 +651,8 @@ hook_fires() {
     done
 }
 expect_eq "hook runs the smoke test for every file it checks, not for notes" \
-    "qb.zsh=run qb_json.py=run compose.yaml=run README.md=run webui-layout.js=run tests/fixtures/torrents.json=run .githooks/pre-commit=run .env.example=skip " \
-    "$(hook_fires qb.zsh qb_json.py compose.yaml README.md webui-layout.js tests/fixtures/torrents.json .githooks/pre-commit .env.example)"
+    "qb.zsh=run compose.yaml=run README.md=run lib/qb_json.py=run assets/webui-layout.js=run tests/fixtures/torrents.json=run .githooks/pre-commit=run .env.example=skip " \
+    "$(hook_fires qb.zsh compose.yaml README.md lib/qb_json.py assets/webui-layout.js tests/fixtures/torrents.json .githooks/pre-commit .env.example)"
 
 # 8. Read-only commands against the real Docker state -----------------------
 printf '\nRead-only commands\n'

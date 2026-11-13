@@ -5,7 +5,9 @@
 # clone location does not matter.
 QB_DIR="${${(%):-%x}:A:h}"
 # Python helpers (JSON parsing/formatting); data goes in on stdin.
-QB_PY="$QB_DIR/qb_json.py"
+QB_PY="$QB_DIR/lib/qb_json.py"
+# Column layout script copied to the clipboard by `qb layout`.
+QB_LAYOUT_JS="$QB_DIR/assets/webui-layout.js"
 QB_DOWNLOADS_DEFAULT="$HOME/Downloads/qbittorrent-downloads"
 QB_DOWNLOADS="$QB_DOWNLOADS_DEFAULT"
 QB_APP="$HOME/Applications/qBittorrent.app"
@@ -2604,7 +2606,7 @@ _qb_doctor() {
 }
 
 _qb_layout() {
-    local layout_js="$QB_DIR/webui-layout.js"
+    local layout_js="$QB_LAYOUT_JS"
 
     if [[ ! -f "$layout_js" ]]; then
         _qb_failure "Layout script not found: $layout_js"
