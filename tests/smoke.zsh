@@ -256,13 +256,13 @@ port_guard_run() {
         print -r -- \"rc=\$? compose-calls=\$(grep -c compose \$CALLS)\"
     "
 }
-out="$(port_guard_run '_qb_start --cli')"
+out="$(port_guard_run 'qb start --cli')"
 if [[ "$out" == *"Port 8090 is in use by container meuwic-web"* && "$out" == *"rc=1 compose-calls=0" ]]; then
     pass "qb start stops before compose when the port is taken"
 else
     fail "qb start stops before compose when the port is taken" "$out"
 fi
-out="$(port_guard_run '_qb_repair')"
+out="$(port_guard_run 'qb repair')"
 if [[ "$out" == *"Port 8090 is in use by container meuwic-web"* && "$out" == *"rc=1 compose-calls=0" ]]; then
     pass "qb repair stops before compose when the port is taken"
 else
@@ -375,7 +375,7 @@ repair_run() {
             esac
             return 0
         }
-        _qb_repair >/dev/null
+        qb repair >/dev/null
         print -r -- \"rc=\$? \${(j:|:)\${(f)\"\$(<\$CALLS)\"}}\"
     "
 }

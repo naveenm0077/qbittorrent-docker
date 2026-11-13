@@ -1039,11 +1039,6 @@ _qb_close_app() {
 }
 
 _qb_start() {
-    _qb_refresh_downloads
-    _qb_refresh_container_env
-    _qb_refresh_webui_bind
-    _qb_refresh_start_ui
-
     local arg
     for arg in "$@"; do
         case "$arg" in
@@ -1137,11 +1132,6 @@ _qb_start() {
 }
 
 _qb_quit() {
-    _qb_refresh_downloads
-    _qb_refresh_container_env
-    _qb_refresh_webui_bind
-    _qb_refresh_quit_docker
-
     local keep_docker=0
     [[ "$QB_QUIT_DOCKER" == "keep" ]] && keep_docker=1
 
@@ -1228,11 +1218,6 @@ _qb_quit() {
 }
 
 _qb_restart() {
-    _qb_refresh_downloads
-    _qb_refresh_container_env
-    _qb_refresh_webui_bind
-    _qb_refresh_start_ui
-
     if _qb_container_running; then
         _qb_spinner "Restarting qBittorrent..."
         
@@ -2272,10 +2257,6 @@ _qb_version() {
 _qb_update() {
     _qb_require_stack || return 1
     _qb_require_api || return 1
-    _qb_refresh_downloads
-    _qb_refresh_container_env
-    _qb_refresh_webui_bind
-    _qb_refresh_start_ui
 
     local response
     response="$(_qb_active_downloads)" || {
@@ -2433,11 +2414,6 @@ _qb_prune() {
 }
 
 _qb_repair() {
-    _qb_refresh_downloads
-    _qb_refresh_container_env
-    _qb_refresh_webui_bind
-    _qb_refresh_start_ui
-
     if ! _qb_docker_running; then
         _qb_spinner "Starting Docker Desktop..."
         
