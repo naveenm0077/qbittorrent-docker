@@ -167,6 +167,7 @@ printf '\ncompose.yaml uses qb settings\n'
 
 # Sorted key=value summary: env WEBUI_PORT PUID PGID TZ, plus the WebUI port
 # mapping (the first ports entry; host_ip appears only on that one).
+# LC_ALL=C so uppercase keys stay before lowercase (en_US sort flips them).
 compose_summary() {
     awk '
         { gsub(/"/, "") }
@@ -174,7 +175,7 @@ compose_summary() {
         $1 == "host_ip:"                    { print "host_ip=" $2 }
         $1 == "target:"    && !t++          { print "target=" $2 }
         $1 == "published:" && !p++          { print "published=" $2 }
-    ' | sort | tr '\n' ' '
+    ' | LC_ALL=C sort | tr '\n' ' '
 }
 
 if ! docker compose version >/dev/null 2>&1; then
