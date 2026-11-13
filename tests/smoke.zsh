@@ -154,6 +154,45 @@ printf 'QB_PUID=1234\nQB_PGID=x\nQB_TZ=Asia/Tokyo\n' > "$ENV_FILE"
 expect_eq "QB_PUID/QB_PGID/QB_TZ (invalid PGID falls back)" "1234 $(id -g) Asia/Tokyo" \
     "$(qbrun '_qb_refresh_container_env; print -r -- "$QB_PUID $QB_PGID $QB_TZ"')"
 
+: > "$ENV_FILE"
+zone="$(readlink /etc/localtime 2>/dev/null)"
+[[ "$zone" == */zoneinfo/* ]] && zone="${zone#*/zoneinfo/}" || zone="Etc/UTC"
+expect_eq "PUID/PGID/TZ defaults: id -u, id -g, system timezone" "$(id -u) $(id -g) $zone" \
+    "$(qbrun '_qb_refresh_container_env; print -r -- "$QB_PUID $QB_PGID $QB_TZ"')"
+
+# 3b. compose.yaml uses what qb exports (docker compose config; no daemon needed)
+printf '\ncompose.yaml uses qb settings\n'
+
+# Sorted key=value summary: env WEBUI_PORT PUID PGID TZ, plus the WebUI port
+# mapping (the first ports entry; host_ip appears only on that one).
+compose_summary() {
+    awk '
+        { gsub(/"/, "") }
+        $1 ~ /^(WEBUI_PORT|PUID|PGID|TZ):$/ { sub(/:$/, "", $1); print $1 "=" $2 }
+        $1 == "host_ip:"                    { print "host_ip=" $2 }
+        $1 == "target:"    && !t++          { print "target=" $2 }
+        $1 == "published:" && !p++          { print "published=" $2 }
+    ' | sort | tr '\n' ' '
+}
+
+if ! docker compose version >/dev/null 2>&1; then
+    skip "compose rendering (docker compose not available)"
+else
+    printf 'QB_WEBUI_PORT=9191\nQB_WEBUI_BIND=lan\nQB_PUID=1234\nQB_PGID=4321\nQB_TZ=Asia/Tokyo\nQB_DOWNLOADS=%s\n' \
+        "$TMP" > "$ENV_FILE"
+    out="$(qbrun "
+        _qb_refresh_downloads; _qb_refresh_container_env; _qb_refresh_webui_bind
+        docker compose --project-directory ${(q)REPO} -f ${(q)REPO}/compose.yaml config
+    " | compose_summary)"
+    expect_eq "settings from qb reach the container" \
+        "PGID=4321 PUID=1234 TZ=Asia/Tokyo WEBUI_PORT=9191 host_ip=0.0.0.0 published=9191 target=9191 " "$out"
+
+    out="$(cd / && env -u QB_WEBUI_PORT -u QB_WEBUI_PUBLISH -u QB_PUID -u QB_PGID -u QB_TZ -u QB_DOWNLOADS \
+        docker compose --project-directory "$REPO" -f "$REPO/compose.yaml" config 2>&1 | compose_summary)"
+    expect_eq "compose fallbacks without qb" \
+        "PGID=20 PUID=501 TZ=Etc/UTC WEBUI_PORT=8090 host_ip=127.0.0.1 published=8090 target=8090 " "$out"
+fi
+
 # 4. Port owner detection ---------------------------------------------------
 printf '\nPort owner detection\n'
 : > "$ENV_FILE"
@@ -183,6 +222,72 @@ else
 
     qbrun "QB_WEBUI_PORT=$port; _qb_refresh_webui_bind; _qb_require_port_free" >/dev/null
     expect_eq "free port passes" "0" "$?"
+fi
+
+# Container cases, with a fake docker that reports who publishes the port.
+port_container_run() {
+    qbrun "
+        _qb_port_listening() { return 0; }
+        _qb_docker_running() { return 0; }
+        docker() { [[ \$1 == ps ]] && print -r -- ${(q)1}; }
+        _qb_refresh_webui_bind
+        print -r -- \"owner=\$(_qb_port_owner)\"
+        _qb_port_conflict >/dev/null && print conflict || print no-conflict
+    "
+}
+expect_eq "another container on the port is named and is a conflict" \
+    "owner=container meuwic-web"$'\n'"conflict" "$(port_container_run meuwic-web)"
+expect_eq "the qbittorrent container itself is not a conflict" \
+    "owner=container qbittorrent"$'\n'"no-conflict" "$(port_container_run qbittorrent)"
+
+# start / repair stop before compose when the port is taken (fake docker logs calls).
+print -r -- "QB_DOWNLOADS=$TMP/dl" > "$ENV_FILE"
+port_guard_run() {
+    : > "$TMP/calls"
+    qbrun "
+        CALLS=${(q)TMP}/calls
+        _qb_docker_running() { return 0; }
+        _qb_container_running() { return 1; }
+        _qb_container_exists() { return 1; }
+        _qb_port_conflict() { print 'container meuwic-web'; }
+        _qb_spinner() { :; }
+        docker() { print -r -- \"\$*\" >> \$CALLS; return 0; }
+        $1
+        print -r -- \"rc=\$? compose-calls=\$(grep -c compose \$CALLS)\"
+    "
+}
+out="$(port_guard_run '_qb_start --cli')"
+if [[ "$out" == *"Port 8090 is in use by container meuwic-web"* && "$out" == *"rc=1 compose-calls=0" ]]; then
+    pass "qb start stops before compose when the port is taken"
+else
+    fail "qb start stops before compose when the port is taken" "$out"
+fi
+out="$(port_guard_run '_qb_repair')"
+if [[ "$out" == *"Port 8090 is in use by container meuwic-web"* && "$out" == *"rc=1 compose-calls=0" ]]; then
+    pass "qb repair stops before compose when the port is taken"
+else
+    fail "qb repair stops before compose when the port is taken" "$out"
+fi
+
+# doctor with Docker stopped: container unknown, port owner shown.
+: > "$ENV_FILE"
+out="$(qbrun '
+    _qb_docker_running() { return 1; }
+    _qb_container_exists() { return 1; }
+    _qb_container_running() { return 1; }
+    _qb_port_conflict() { print "python3 (pid 42)"; }
+    docker() { return 1; }
+    qb doctor
+')"
+if [[ "$out" == *"Container: unknown (Docker stopped)"* && "$out" != *"Container: missing"* ]]; then
+    pass "doctor: container unknown (not missing) when Docker is stopped"
+else
+    fail "doctor: container unknown (not missing) when Docker is stopped" "$out"
+fi
+if [[ "$out" == *"Port 8090: in use by python3 (pid 42) (qb start will fail)"* ]]; then
+    pass "doctor: names the process holding the WebUI port"
+else
+    fail "doctor: names the process holding the WebUI port" "$out"
 fi
 
 # 5. Compose error output (fake docker; nothing real runs) --------------------

@@ -298,8 +298,9 @@ The smoke test is read-only: it never starts, stops, or recreates Docker or the 
 
 - `qb.zsh` syntax, loading, `qb help`, and unknown-command handling.
 - That the command dispatcher, Tab completion, `qb help`, and the README command table list the same commands.
-- Parsing of `.env.qbittorrent` settings (quotes, spaces, CRLF, `~` paths, invalid values falling back to defaults).
-- WebUI port owner detection, using a temporary local listener on port 18555.
+- Parsing of `.env.qbittorrent` settings (quotes, spaces, CRLF, `~` paths, invalid values falling back to defaults), and the user, group and timezone defaults.
+- That `compose.yaml` receives the port, user, group and timezone from `qb`, and its fallbacks when run without `qb` (`docker compose config`; no Docker engine needed).
+- WebUI port owner detection, using a temporary local listener on port 18555, plus another container holding the port, `qb start` / `qb repair` stopping before Compose, and the `qb doctor` port and container lines.
 - Compose error output on failure, and the `qb repair` pull-and-retry path (with a stand-in `docker` function, so nothing real runs).
 - That `qb status` and `qb doctor` run without shell errors, and that stack commands fail fast with `Run: qb start` when Docker is down.
 
