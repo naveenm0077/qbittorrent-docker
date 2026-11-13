@@ -1317,16 +1317,18 @@ _qb_transfer_print() {
     [[ -n "$line" ]] && _qb_line info "$line"
 }
 
+# Args: filter, then --json for raw API JSON (errors then go to stderr).
 _qb_torrents_print() {
     local filter="${1:-}"
+    local mode="${2:-}"
     local response
 
     response="$(_qb_torrents_info "$filter")" || {
-        _qb_failure "Failed to query qBittorrent"
+        _qb_failure "Failed to query qBittorrent" >&${${mode:+2}:-1}
         return 1
     }
 
-    printf '%s' "$response" | python3 "$QB_PY" torrents
+    printf '%s' "$response" | python3 "$QB_PY" torrents $mode
 }
 
 # Resolve id args (hash prefix or unique name substring) to full hashes (| joined).
@@ -1353,10 +1355,15 @@ _qb_resolve_hashes() {
 }
 
 _qb_torrents() {
-    _qb_require_stack || return 1
-    _qb_require_api || return 1
+    # With --json, stdout is JSON only: messages go to stderr.
+    local out=1
+    (( ${@[(Ie)--json]} )) && out=2
+
+    _qb_require_stack >&$out || return 1
+    _qb_require_api >&$out || return 1
 
     local watch=0
+    local json=0
     local filter=""
     local arg
 
@@ -1364,6 +1371,9 @@ _qb_torrents() {
         case "$arg" in
             --watch|-w)
                 watch=1
+                ;;
+            --json)
+                json=1
                 ;;
             --downloading)
                 filter="downloading"
@@ -1384,20 +1394,31 @@ _qb_torrents() {
                 filter="errored"
                 ;;
             -h|--help)
-                printf "Usage: qb torrents [--watch] [--downloading|--seeding|--stopped|--completed|--active|--errored]\n"
+                printf "Usage: qb torrents [--watch|--json] [--downloading|--seeding|--stopped|--completed|--active|--errored]\n"
                 printf "  --watch / -w     Redraw list every 2s until Ctrl-C\n"
+                printf "  --json           Print the qBittorrent API JSON (for scripts)\n"
                 printf "  --downloading    Only downloading\n"
                 printf "  --seeding        Only seeding\n"
                 printf "  --stopped        Only stopped (alias: --paused)\n"
                 return 0
                 ;;
             *)
-                _qb_line fail "Unknown option: $arg"
-                printf "Usage: qb torrents [--watch] [--downloading|--seeding|--stopped]\n"
+                _qb_line fail "Unknown option: $arg" >&$out
+                printf "Usage: qb torrents [--watch|--json] [--downloading|--seeding|--stopped]\n" >&$out
                 return 1
                 ;;
         esac
     done
+
+    if (( json && watch )); then
+        _qb_line fail "--json and --watch cannot be combined" >&2
+        return 1
+    fi
+
+    if (( json )); then
+        _qb_torrents_print "$filter" --json
+        return $?
+    fi
 
     if (( ! watch )); then
         _qb_torrents_print "$filter"
@@ -1534,33 +1555,42 @@ _qb_remove() {
 }
 
 _qb_show() {
-    _qb_require_stack || return 1
-    _qb_require_api || return 1
+    # With --json, stdout is JSON only: messages go to stderr.
+    local out=1
+    local mode=""
+    if (( ${@[(Ie)--json]} )); then
+        out=2
+        mode="--json"
+        set -- "${(@)@:#--json}"
+    fi
+
+    _qb_require_stack >&$out || return 1
+    _qb_require_api >&$out || return 1
 
     local hash
     local props
     local files
 
     if [[ -z "$1" || "$1" == "-h" || "$1" == "--help" ]]; then
-        printf "Usage: qb show <hash-or-name>\n"
+        printf "Usage: qb show [--json] <hash-or-name>\n" >&$out
         return 1
     fi
 
     if (( $# > 1 )); then
-        _qb_line fail "Show one torrent at a time"
-        printf "Usage: qb show <hash-or-name>\n"
+        _qb_line fail "Show one torrent at a time" >&$out
+        printf "Usage: qb show [--json] <hash-or-name>\n" >&$out
         return 1
     fi
 
     hash="$(_qb_resolve_hashes "$1")" || return 1
 
     props="$(_qb_api_curl "/api/v2/torrents/properties?hash=${hash}")" || {
-        _qb_failure "Failed to load torrent properties"
+        _qb_failure "Failed to load torrent properties" >&$out
         return 1
     }
     files="$(_qb_api_curl "/api/v2/torrents/files?hash=${hash}")" || files="[]"
 
-    printf '{"props":%s,"files":%s}' "$props" "$files" | python3 "$QB_PY" show "$hash"
+    printf '{"props":%s,"files":%s}' "$props" "$files" | python3 "$QB_PY" show "$hash" $mode
 }
 
 _qb_recheck() { _qb_torrent_action recheck recheck "Recheck started" "$@"; }
@@ -2617,6 +2647,7 @@ _qb_help() {
         "  qb status      Show current state" \
         "  qb torrents    List torrents (hash, progress, speeds, state)" \
         "  qb torrents --watch  Redraw torrent list every 2s" \
+        "  qb torrents --json   Print torrents as JSON (also: qb show --json)" \
         "  qb show        Show torrent details and files" \
         "  qb add         Add magnet or http(s) torrent URL" \
         "  qb pause       Pause torrent(s) by hash prefix or name" \

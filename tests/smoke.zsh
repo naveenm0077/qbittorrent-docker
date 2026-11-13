@@ -440,6 +440,19 @@ else
     fail "invalid torrents JSON: error and rc=1" "$out"
 fi
 
+# --json: stdout is the API JSON only; messages go to stderr.
+expect_eq "torrents --json: API JSON, filter passed" "4 a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 filter=seeding" \
+    "$(fmt_run '_qb_torrents_info() { print -r -- "filter=$1" > '"${(q)TMP}"'/filter; cat $F/torrents.json; }
+                qb torrents --json --seeding 2>/dev/null | python3 -I -c "import json,sys; d=json.load(sys.stdin); print(len(d), d[0][\"hash\"], end=\" \")"
+                cat '"${(q)TMP}"'/filter')"
+expect_eq "torrents --json: empty list is []" "[]" "$(fmt_run '_qb_torrents_info() { print "[]"; }; qb torrents --json')"
+expect_eq "torrents --json: API failure keeps stdout empty, rc=1" "rc=1" \
+    "$(fmt_run '_qb_torrents_info() { return 1; }; qb torrents --json 2>/dev/null; print "rc=$?"')"
+expect_eq "torrents --json with --watch is refused" "rc=1" "$(fmt_run 'qb torrents --watch --json 2>/dev/null; print "rc=$?"')"
+expect_eq "show --json: hash, properties, all files" "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 /downloads/ 45" \
+    "$(fmt_run '_qb_resolve_hashes() { print -r -- a1b2c3d4e5f60718293a4b5c6d7e8f9012345678; }; qb show a1b2 --json 2>/dev/null' |
+       python3 -I -c 'import json,sys; d=json.load(sys.stdin); print(d["hash"], d["properties"]["save_path"], len(d["files"]))')"
+
 expect_eq "transfer line" "→ Transfer: ↓7.0 MiB/s  ↑50.0 KiB/s  alt-limits=on" "$(fmt_run _qb_transfer_print)"
 
 out="$(fmt_run '_qb_resolve_hashes() { print -r -- $1; }; _qb_show a1b2c3d4')"

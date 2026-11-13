@@ -167,7 +167,8 @@ Torrent ids are a **hash prefix** or a **unique name substring**.
 | `qb status` | Show Docker, container, WebUI, transfer speeds (when API works), and prefs. |
 | `qb torrents` | List all torrents (short hash, progress, size, speeds, state). Filters: `--downloading`, `--seeding`, `--stopped`, `--completed`, `--active`, `--errored`. |
 | `qb torrents --watch` | Redraw the torrent list every 2 seconds until Ctrl-C. |
-| `qb show <id>` | Show one torrent’s properties and file list. |
+| `qb torrents --json` | Print the torrent list as JSON (qBittorrent's `/api/v2/torrents/info` fields, unchanged) for scripts; works with the filters. Errors go to stderr. |
+| `qb show <id>` | Show one torrent’s properties and file list. `--json` prints `{"hash", "properties", "files"}` with the API fields unchanged. |
 | `qb add <magnet-or-url>` | Add a magnet link or http(s) `.torrent` URL. |
 | `qb pause <id…>` | Pause torrent(s) by hash prefix or unique name substring. |
 | `qb resume <id…>` | Resume torrent(s) by hash prefix or unique name substring. |

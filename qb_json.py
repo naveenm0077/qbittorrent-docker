@@ -71,6 +71,11 @@ def read_json_stdin():
     return json.loads(sys.stdin.read())
 
 
+def print_json(data):
+    """--json output: one line of compact JSON, non-ASCII kept as is."""
+    print(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+
+
 # --- Commands -----------------------------------------------------------------
 
 def cmd_torrents(args):
@@ -79,6 +84,10 @@ def cmd_torrents(args):
     except Exception as e:
         print(f"Failed to parse qBittorrent response: {e}", file=sys.stderr)
         return 1
+
+    if "--json" in args:
+        print_json(torrents)
+        return 0
 
     if not torrents:
         print("No torrents.")
@@ -122,6 +131,10 @@ def cmd_show(args):
         return 1
 
     h = args[0] if args else ""
+    if "--json" in args[1:]:
+        print_json({"hash": h, "properties": p, "files": files})
+        return 0
+
     print(p.get("name") or "unknown")
     print(f"  hash: {h}")
     print(f"  save: {p.get('save_path') or '-'}")
