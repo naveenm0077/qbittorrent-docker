@@ -300,6 +300,7 @@ The smoke test is read-only: it never starts, stops, or recreates Docker or the 
 - That the command dispatcher, Tab completion, `qb help`, and the README command table list the same commands.
 - Parsing of `.env.qbittorrent` settings (quotes, spaces, CRLF, `~` paths, invalid values falling back to defaults).
 - WebUI port owner detection, using a temporary local listener on port 18555.
+- Compose error output on failure (with a stand-in `docker` function, so nothing real runs).
 - That `qb status` and `qb doctor` run without shell errors, and that stack commands fail fast with `Run: qb start` when Docker is down.
 
 It exits non-zero when any check fails.

@@ -277,6 +277,27 @@ _qb_failure() {
     printf "\r\033[2K%s %s\n" "$(_qb_mark fail)" "$1"
 }
 
+typeset -g QB_COMPOSE_OUTPUT=""
+
+# Run docker compose without printing; keep its output for _qb_compose_error.
+# Usage: if ! _qb_compose up -d; then _qb_failure "..."; _qb_compose_error; fi
+_qb_compose() {
+    QB_COMPOSE_OUTPUT="$(docker compose "$@" 2>&1)"
+}
+
+# Print the last lines of the failed compose run, indented under the failure.
+_qb_compose_error() {
+    local -a lines
+    local first
+
+    lines=(${(f)QB_COMPOSE_OUTPUT})
+    (( ${#lines} )) || return 0
+
+    # Last 8 lines; ${lines[-8,-1]} is empty when there are fewer than 8.
+    first=$(( ${#lines} > 8 ? ${#lines} - 7 : 1 ))
+    printf '    %s\n' "${(@)lines[first,-1]}"
+}
+
 _qb_docker_running() {
     docker info >/dev/null 2>&1
 }
@@ -1095,8 +1116,9 @@ _qb_start() {
 
         _qb_spinner "Starting qBittorrent..."
         
-        if ! docker compose up -d >/dev/null 2>&1; then
+        if ! _qb_compose up -d; then
             _qb_failure "Failed to start qBittorrent"
+            _qb_compose_error
             return 1
         fi
         
@@ -1116,8 +1138,9 @@ _qb_start() {
 
         _qb_spinner "Updating container mounts/ports..."
 
-        if ! docker compose up -d --force-recreate >/dev/null 2>&1; then
+        if ! _qb_compose up -d --force-recreate; then
             _qb_failure "Failed to update container mounts/ports"
+            _qb_compose_error
             return 1
         fi
 
@@ -1196,8 +1219,9 @@ _qb_quit() {
 
         _qb_spinner "Stopping qBittorrent..."
 
-        if ! docker compose stop >/dev/null 2>&1; then
+        if ! _qb_compose stop; then
             _qb_failure "Failed to stop qBittorrent"
+            _qb_compose_error
             return 1
         fi
 
@@ -1253,8 +1277,9 @@ _qb_restart() {
         
         _qb_spinner "Restarting qBittorrent..."
         
-        if ! docker compose restart >/dev/null 2>&1; then
+        if ! _qb_compose restart; then
             _qb_failure "Failed to restart qBittorrent"
+            _qb_compose_error
             return 1
         fi
         
@@ -2803,8 +2828,9 @@ _qb_update() {
 
     _qb_spinner "Pulling latest qBittorrent image..."
     
-    if ! docker compose pull >/dev/null 2>&1; then
+    if ! _qb_compose pull; then
         _qb_failure "Failed to pull qBittorrent image"
+        _qb_compose_error
         return 1
     fi
     
@@ -2825,8 +2851,9 @@ _qb_update() {
 
     _qb_spinner "Recreating qBittorrent..."
     
-    if ! docker compose up -d --force-recreate >/dev/null 2>&1; then
+    if ! _qb_compose up -d --force-recreate; then
         _qb_failure "Failed to recreate qBittorrent"
+        _qb_compose_error
         return 1
     fi
     
@@ -3109,8 +3136,9 @@ _qb_repair() {
 
     _qb_spinner "Recreating qBittorrent..."
     
-    if ! docker compose up -d --force-recreate >/dev/null 2>&1; then
+    if ! _qb_compose up -d --force-recreate; then
         _qb_failure "Failed to recreate qBittorrent"
+        _qb_compose_error
         return 1
     fi
     

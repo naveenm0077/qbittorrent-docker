@@ -185,7 +185,27 @@ else
     expect_eq "free port passes" "0" "$?"
 fi
 
-# 5. Read-only commands against the real Docker state -----------------------
+# 5. Compose error output (fake docker; nothing real runs) --------------------
+printf '\nCompose error output\n'
+
+out="$(qbrun '
+    docker() { print "progress"; print ""; print "Error: bind: address already in use" >&2; return 1; }
+    if ! _qb_compose up -d; then _qb_compose_error; fi
+')"
+expect_eq "failure shows output incl. stderr, blank lines dropped" \
+    "    progress"$'\n'"    Error: bind: address already in use" "$out"
+
+out="$(qbrun '
+    docker() { for i in {1..12}; do print "line $i"; done; return 1; }
+    _qb_compose pull || _qb_compose_error
+')"
+expect_eq "long output is cut to the last 8 lines" "8 line 5 line 12" \
+    "$(print -r -- "${#${(f)out}} ${${(f)out}[1]##    } ${${(f)out}[-1]##    }")"
+
+out="$(qbrun 'docker() { print "noisy"; return 0; }; _qb_compose up -d && print -r -- "rc=0"')"
+expect_eq "success prints nothing" "rc=0" "$out"
+
+# 6. Read-only commands against the real Docker state -----------------------
 printf '\nRead-only commands\n'
 
 for cmd in status doctor; do
