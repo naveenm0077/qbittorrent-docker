@@ -592,6 +592,27 @@ else
     fail "qb search --add 2: full flow adds the second result" "$out"
 fi
 
+# Search job cleanup: which stop / delete calls each path makes.
+cleanup_run() {
+    qbrun "
+        F=${(q)FIX}; LOG=${(q)TMP}/search-posts; : > \$LOG
+        _qb_require_stack() { return 0; }; _qb_require_api() { return 0; }; _qb_spinner() { :; }
+        _qb_api_post() { print -r -- \"\${1##*/} \$3\" >> \$LOG; [[ \$1 == */start ]] && print '{\"id\":42}'; return 0; }
+        _qb_api_curl() {
+            case \$1 in
+                */plugins) cat \$F/plugins.json ;;
+                */status*) print '[{\"status\":\"$1\"}]' ;;
+                */results*) [[ $2 == fetchfail ]] && return 1; cat \$F/search-results.json ;;
+            esac
+        }
+        _qb_search --timeout 1 debian >/dev/null 2>&1
+        print -r -- \"rc=\$? \$(grep -v '^start' \$LOG | tr '\n' ';')\"
+    " </dev/null
+}
+expect_eq "search cleanup: finished job is deleted" "rc=0 delete id=42;" "$(cleanup_run Stopped ok)"
+expect_eq "search cleanup: timed-out job is stopped, then deleted" "rc=0 stop id=42;delete id=42;" "$(cleanup_run Running ok)"
+expect_eq "search cleanup: failed results fetch stops and deletes" "rc=1 stop id=42;delete id=42;" "$(cleanup_run Stopped fetchfail)"
+
 # 8. Read-only commands against the real Docker state -----------------------
 printf '\nRead-only commands\n'
 

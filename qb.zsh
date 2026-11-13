@@ -1842,6 +1842,21 @@ _qb_search_enabled_count() {
     printf '%s' "$response" | python3 "$QB_PY" search-enabled-count
 }
 
+# Best-effort cleanup of a search job (errors ignored).
+# Usage: _qb_search_job <stop|delete|cleanup> <id>   (cleanup = stop + delete)
+_qb_search_job() {
+    local action="$1"
+    local id="$2"
+
+    if [[ "$action" == stop || "$action" == cleanup ]]; then
+        _qb_api_post /api/v2/search/stop --data-urlencode "id=$id" >/dev/null 2>&1
+    fi
+    if [[ "$action" == delete || "$action" == cleanup ]]; then
+        _qb_api_post /api/v2/search/delete --data-urlencode "id=$id" >/dev/null 2>&1
+    fi
+    return 0
+}
+
 _qb_search() {
     _qb_require_stack || return 1
     _qb_require_api || return 1
@@ -1984,11 +1999,7 @@ _qb_search() {
         return 1
     fi
 
-    trap '_qb_cleanup_spinner
-          _qb_api_post /api/v2/search/stop --data-urlencode "id='"$job_id"'" >/dev/null 2>&1
-          _qb_api_post /api/v2/search/delete --data-urlencode "id='"$job_id"'" >/dev/null 2>&1
-          trap - INT
-          return 130' INT
+    trap "_qb_cleanup_spinner; _qb_search_job cleanup ${(q)job_id}; trap - INT; return 130" INT
 
     while (( elapsed < timeout )); do
         status_json="$(_qb_api_curl "/api/v2/search/status?id=${job_id}")" || break
@@ -2012,15 +2023,14 @@ _qb_search() {
     done
 
     results_json="$(_qb_api_curl "/api/v2/search/results?id=${job_id}&limit=${fetch_limit}")" || {
-        _qb_api_post /api/v2/search/stop --data-urlencode "id=$job_id" >/dev/null 2>&1
-        _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
+        _qb_search_job cleanup "$job_id"
         trap - INT
         _qb_failure "Failed to fetch search results"
         return 1
     }
 
     if [[ "$job_status" != "Stopped" ]]; then
-        _qb_api_post /api/v2/search/stop --data-urlencode "id=$job_id" >/dev/null 2>&1
+        _qb_search_job stop "$job_id"
         _qb_cleanup_spinner
         printf '\r\033[2K'
         _qb_line info "Search timed out after ${timeout}s; showing partial results"
@@ -2030,7 +2040,7 @@ _qb_search() {
 
     sorted_json="$(_qb_search_sort_json "$results_json")" || sorted_json="[]"
 
-    _qb_api_post /api/v2/search/delete --data-urlencode "id=$job_id" >/dev/null 2>&1
+    _qb_search_job delete "$job_id"
     trap - INT
 
     if [[ -n "$add_n" ]]; then
