@@ -279,11 +279,13 @@ The Web App's own settings window has no developer options; the inspector is rea
 | --- | --- |
 | `compose.yaml` | qBittorrent Docker service definition. |
 | `qb.zsh` | `qb` CLI commands. |
+| `qb_json.py` | Python helpers used by `qb.zsh` to format API and Docker JSON (torrents, show, transfer line, plugins, images, image age). Standard library only; JSON is read from stdin. |
 | `config/` | Persistent qBittorrent configuration and session state. |
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
 | `plugins/` | Local search plugins (third-party Python — review before enabling). Use `qb plugins` / `qb search`. |
 | `webui-layout.js` | Column layout script used by `qb layout`. |
 | `tests/smoke.zsh` | Read-only smoke test (see [Tests](#tests)). |
+| `tests/fixtures/` | Sample qBittorrent API responses (and expected output) used by the smoke test. |
 | `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_PUID`, `QB_PGID`, `QB_TZ`, `QB_STYLE`, `QB_WEBUI_PORT`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`, `QB_START_UI`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
@@ -301,6 +303,7 @@ The smoke test is read-only: it never starts, stops, or recreates Docker or the 
 - Parsing of `.env.qbittorrent` settings (quotes, spaces, CRLF, `~` paths, invalid values falling back to defaults), and the user, group and timezone defaults.
 - That `compose.yaml` receives the port, user, group and timezone from `qb`, and its fallbacks when run without `qb` (`docker compose config`; no Docker engine needed).
 - WebUI port owner detection, using a temporary local listener on port 18555, plus another container holding the port, `qb start` / `qb repair` stopping before Compose, and the `qb doctor` port and container lines.
+- The `qb_json.py` formatters, called through `qb.zsh` with sample API responses from `tests/fixtures/` (torrents, show, transfer line, plugins, images, image age), including a torrent list larger than the 1 MiB macOS argument limit.
 - Compose error output on failure, and the `qb repair` pull-and-retry path (with a stand-in `docker` function, so nothing real runs).
 - That `qb status` and `qb doctor` run without shell errors, and that stack commands fail fast with `Run: qb start` when Docker is down.
 

@@ -1,0 +1,8 @@
+ubuntu-24.04.1-desktop-amd64.iso
+  a1b2c3d4   42.4%  5.7 GiB  ↓5.2 MiB/s  ↑18.0 KiB/s  downloading
+debian-12.8.0-amd64-netinst.iso
+  0f1e2d3c  100.0%  631.0 MiB  ↓0 B/s  ↑0 B/s  stalledUP
+big-archive
+  ffeeddcc    0.0%  3.0 TiB  ↓800 B/s  ↑1023 B/s  pausedDL
+unknown
+  1234    0.0%  0 B  ↓0 B/s  ↑0 B/s  unknown

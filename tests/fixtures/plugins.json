@@ -1,0 +1,16 @@
+[
+ {
+  "name": "eztv",
+  "fullName": "EZTV",
+  "version": "1.16",
+  "enabled": true,
+  "url": "https://eztvx.to"
+ },
+ {
+  "name": "Academictorrents",
+  "fullName": "Academic Torrents",
+  "version": "1.2",
+  "enabled": false,
+  "url": "https://academictorrents.com/very/long/path/that/goes/on/and/on/to/test/truncation"
+ }
+]

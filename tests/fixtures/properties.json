@@ -1,0 +1,16 @@
+{
+ "name": "ubuntu-24.04.1-desktop-amd64.iso",
+ "save_path": "/downloads/",
+ "total_size": 6114770944,
+ "total_downloaded": 2590000000,
+ "total_uploaded": 104857600,
+ "dl_speed": 5452595,
+ "up_speed": 18432,
+ "peers": 12,
+ "peers_total": 80,
+ "seeds": 45,
+ "seeds_total": 1203,
+ "share_ratio": 0.04048,
+ "addition_date": 1762000000,
+ "comment": "Ubuntu CD releases.ubuntu.com"
+}

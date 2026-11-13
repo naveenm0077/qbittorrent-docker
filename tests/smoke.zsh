@@ -346,7 +346,94 @@ expect_eq "pull fails: stop without a second recreate" \
     "rc=1 rm -f qbittorrent|compose up -d --force-recreate|compose pull" \
     "$(repair_run pullfail)"
 
-# 7. Read-only commands against the real Docker state -----------------------
+# 7. qb_json.py formatters, called through qb.zsh (fixtures; nothing real runs)
+printf '\nJSON formatters (qb_json.py)\n'
+
+FIX="$REPO/tests/fixtures"
+# Stub the API with fixture files; then run a qb.zsh formatter function.
+fmt_run() {
+    qbrun "
+        F=${(q)FIX}
+        _qb_require_stack() { return 0; }; _qb_require_api() { return 0; }
+        _qb_resolve_hashes() { print -r -- \$1; }
+        _qb_api_curl() {
+            case \$1 in
+                /api/v2/transfer/info) cat \$F/transfer.json ;;
+                /api/v2/transfer/speedLimitsMode) print 1 ;;
+                /api/v2/torrents/properties*) cat \$F/properties.json ;;
+                /api/v2/torrents/files*) cat \$F/files.json ;;
+                /api/v2/search/plugins) cat \$F/plugins.json ;;
+            esac
+        }
+        _qb_torrents_info() { cat \$F/torrents.json; }
+        $1
+    "
+}
+
+expect_eq "torrents list matches expected output" "$(<"$FIX/torrents.expected.txt")" "$(fmt_run _qb_torrents_print)"
+expect_eq "empty torrent list" "No torrents." "$(fmt_run '_qb_torrents_info() { print "[]"; }; _qb_torrents_print')"
+out="$(fmt_run '_qb_torrents_info() { print "not json"; }; _qb_torrents_print; print "rc=$?"')"
+if [[ "$out" == "Failed to parse qBittorrent response:"*"rc=1" ]]; then
+    pass "invalid torrents JSON: error and rc=1"
+else
+    fail "invalid torrents JSON: error and rc=1" "$out"
+fi
+
+expect_eq "transfer line" "→ Transfer: ↓7.0 MiB/s  ↑50.0 KiB/s  alt-limits=on" "$(fmt_run _qb_transfer_print)"
+
+out="$(fmt_run '_qb_show a1b2c3d4')"
+if [[ "${${(f)out}[1]}" == "ubuntu-24.04.1-desktop-amd64.iso" && "$out" == *"  ratio: 0.040  added: "* &&
+      "$out" == *"  files (45):"* && "$out" == *"    … 5 more" && ${#${(f)out}} -eq 50 ]]; then
+    pass "show: properties, ratio, first 40 of 45 files"
+else
+    fail "show: properties, ratio, first 40 of 45 files" "$out"
+fi
+
+out="$(fmt_run _qb_plugins_list)"
+if [[ "${${(f)out}[3]}" == "Academictorrents  off      1.2      Academic Torrents  https://academictorrents.com/very/long/path/tha…" &&
+      "${${(f)out}[4]}" == "eztv              on       1.16     EZTV               https://eztvx.to"* ]]; then
+    pass "plugins table: sorted, URL truncated"
+else
+    fail "plugins table: sorted, URL truncated" "$out"
+fi
+
+expect_eq "image age: old timestamp gives a day count" "yes" \
+    "$(qbrun '_qb_kept_image_id() { print x; }; docker() { print 2020-01-01T00:00:00.123456789Z; }
+              d=$(_qb_image_age_days) && (( d > 365 )) && print yes')"
+qbrun '_qb_kept_image_id() { print x; }; docker() { print garbage; }; _qb_image_age_days' >/dev/null
+expect_eq "image age: unparseable timestamp returns 1" "1" "$?"
+
+# images runs docker itself from Python: put a fake docker first on PATH.
+mkdir -p "$TMP/bin"
+cat > "$TMP/bin/docker" <<'EOF'
+#!/bin/sh
+case "$*" in
+    "images --filter reference=*qbittorrent* --format {{json .}}")
+        echo '{"ID":"sha256:aaaaaaaaaaaa1111","Repository":"lscr.io/linuxserver/qbittorrent","Tag":"latest","CreatedSince":"3 weeks ago"}' ;;
+    "images -f dangling=true -q") echo "cccccccccccc" ;;
+    "image inspect cccccccccccc --format {{json .Config.Labels}}") echo '{"title":"qbittorrent"}' ;;
+    "image inspect sha256:aaaaaaaaaaaa1111 --format {{.Size}}") echo 214748364 ;;
+    "image inspect cccccccccccc --format {{.Size}}") echo 1536 ;;
+    *) exit 1 ;;
+esac
+EOF
+chmod +x "$TMP/bin/docker"
+out="$(PATH="$TMP/bin:$PATH" qbrun '_qb_require_docker() { return 0; }; _qb_images')"
+if [[ "$out" == *"latest           aaaaaaaaaaaa  204.8 MiB  3 weeks ago"* &&
+      "$out" == *"<none>           cccccccccccc    1.5 KiB  dangling"* && "$out" == *"Images: 2 unique"* ]]; then
+    pass "images: tagged + dangling rows and totals"
+else
+    fail "images: tagged + dangling rows and totals" "$out"
+fi
+
+# Large responses: JSON goes to Python on stdin, not argv (ARG_MAX is 1 MiB on macOS).
+python3 -I -c 'import json; print(json.dumps([{"name": "t%05d-%s" % (i, "x" * 120), "hash": "%040x" % i,
+    "state": "stalledUP", "progress": 1, "size": 1 << 30, "tracker": "udp://tracker.example.org:1337/announce",
+    "magnet_uri": "magnet:?xt=urn:btih:%040x" % i} for i in range(4000)]))' > "$TMP/big.json"
+out="$(qbrun "_qb_torrents_info() { cat ${(q)TMP}/big.json; }; _qb_torrents_print | wc -l | tr -d ' '")"
+expect_eq "2 MB torrent list (over ARG_MAX) prints all 4000 torrents" "8000" "$out"
+
+# 8. Read-only commands against the real Docker state -----------------------
 printf '\nRead-only commands\n'
 
 for cmd in status doctor; do

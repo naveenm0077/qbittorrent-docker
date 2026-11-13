@@ -1,0 +1,227 @@
+[
+ {
+  "name": "pack/disc-00.bin",
+  "size": 1048576,
+  "progress": 0.0
+ },
+ {
+  "name": "pack/disc-01.bin",
+  "size": 2097152,
+  "progress": 0.25
+ },
+ {
+  "name": "pack/disc-02.bin",
+  "size": 3145728,
+  "progress": 0.5
+ },
+ {
+  "name": "pack/disc-03.bin",
+  "size": 4194304,
+  "progress": 0.75
+ },
+ {
+  "name": "pack/disc-04.bin",
+  "size": 5242880,
+  "progress": 1.0
+ },
+ {
+  "name": "pack/disc-05.bin",
+  "size": 6291456,
+  "progress": 0.0
+ },
+ {
+  "name": "pack/disc-06.bin",
+  "size": 7340032,
+  "progress": 0.25
+ },
+ {
+  "name": "pack/disc-07.bin",
+  "size": 8388608,
+  "progress": 0.5
+ },
+ {
+  "name": "pack/disc-08.bin",
+  "size": 9437184,
+  "progress": 0.75
+ },
+ {
+  "name": "pack/disc-09.bin",
+  "size": 10485760,
+  "progress": 1.0
+ },
+ {
+  "name": "pack/disc-10.bin",
+  "size": 11534336,
+  "progress": 0.0
+ },
+ {
+  "name": "pack/disc-11.bin",
+  "size": 12582912,
+  "progress": 0.25
+ },
+ {
+  "name": "pack/disc-12.bin",
+  "size": 13631488,
+  "progress": 0.5
+ },
+ {
+  "name": "pack/disc-13.bin",
+  "size": 14680064,
+  "progress": 0.75
+ },
+ {
+  "name": "pack/disc-14.bin",
+  "size": 15728640,
+  "progress": 1.0
+ },
+ {
+  "name": "pack/disc-15.bin",
+  "size": 16777216,
+  "progress": 0.0
+ },
+ {
+  "name": "pack/disc-16.bin",
+  "size": 17825792,
+  "progress": 0.25
+ },
+ {
+  "name": "pack/disc-17.bin",
+  "size": 18874368,
+  "progress": 0.5
+ },
+ {
+  "name": "pack/disc-18.bin",
+  "size": 19922944,
+  "progress": 0.75
+ },
+ {
+  "name": "pack/disc-19.bin",
+  "size": 20971520,
+  "progress": 1.0
+ },
+ {
+  "name": "pack/disc-20.bin",
+  "size": 22020096,
+  "progress": 0.0
+ },
+ {
+  "name": "pack/disc-21.bin",
+  "size": 23068672,
+  "progress": 0.25
+ },
+ {
+  "name": "pack/disc-22.bin",
+  "size": 24117248,
+  "progress": 0.5
+ },
+ {
+  "name": "pack/disc-23.bin",
+  "size": 25165824,
+  "progress": 0.75
+ },
+ {
+  "name": "pack/disc-24.bin",
+  "size": 26214400,
+  "progress": 1.0
+ },
+ {
+  "name": "pack/disc-25.bin",
+  "size": 27262976,
+  "progress": 0.0
+ },
+ {
+  "name": "pack/disc-26.bin",
+  "size": 28311552,
+  "progress": 0.25
+ },
+ {
+  "name": "pack/disc-27.bin",
+  "size": 29360128,
+  "progress": 0.5
+ },
+ {
+  "name": "pack/disc-28.bin",
+  "size": 30408704,
+  "progress": 0.75
+ },
+ {
+  "name": "pack/disc-29.bin",
+  "size": 31457280,
+  "progress": 1.0
+ },
+ {
+  "name": "pack/disc-30.bin",
+  "size": 32505856,
+  "progress": 0.0
+ },
+ {
+  "name": "pack/disc-31.bin",
+  "size": 33554432,
+  "progress": 0.25
+ },
+ {
+  "name": "pack/disc-32.bin",
+  "size": 34603008,
+  "progress": 0.5
+ },
+ {
+  "name": "pack/disc-33.bin",
+  "size": 35651584,
+  "progress": 0.75
+ },
+ {
+  "name": "pack/disc-34.bin",
+  "size": 36700160,
+  "progress": 1.0
+ },
+ {
+  "name": "pack/disc-35.bin",
+  "size": 37748736,
+  "progress": 0.0
+ },
+ {
+  "name": "pack/disc-36.bin",
+  "size": 38797312,
+  "progress": 0.25
+ },
+ {
+  "name": "pack/disc-37.bin",
+  "size": 39845888,
+  "progress": 0.5
+ },
+ {
+  "name": "pack/disc-38.bin",
+  "size": 40894464,
+  "progress": 0.75
+ },
+ {
+  "name": "pack/disc-39.bin",
+  "size": 41943040,
+  "progress": 1.0
+ },
+ {
+  "name": "pack/disc-40.bin",
+  "size": 42991616,
+  "progress": 0.0
+ },
+ {
+  "name": "pack/disc-41.bin",
+  "size": 44040192,
+  "progress": 0.25
+ },
+ {
+  "name": "pack/disc-42.bin",
+  "size": 45088768,
+  "progress": 0.5
+ },
+ {
+  "name": "pack/disc-43.bin",
+  "size": 46137344,
+  "progress": 0.75
+ },
+ {
+  "name": "pack/disc-44.bin",
+  "size": 47185920,
+  "progress": 1.0
+ }
+]
