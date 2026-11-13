@@ -448,7 +448,8 @@ def cmd_search_page(args):
 
     # Fixed columns: # SIZE SEEDS LEECH SITE; NAME gets the remainder (max 60).
     idx_w = max(2, len(str(start + len(chunk))))
-    size_w, seeds_w, leech_w, site_w, gap = 8, 5, 5, 18, 2
+    # SIZE fits the longest human_bytes value, "1023.9 GiB" (10 chars).
+    size_w, seeds_w, leech_w, site_w, gap = 10, 5, 5, 18, 2
     fixed = idx_w + size_w + seeds_w + leech_w + site_w + gap * 5
     name_w = min(max(12, cols - fixed), 60)
 

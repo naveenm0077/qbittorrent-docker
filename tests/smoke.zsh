@@ -466,6 +466,14 @@ if [[ "${${(f)out}[1]}" == "Results: 24  page 1/3  [Running]" && ${#${(f)out}} -
 else
     fail "results page: header, 10 rows, unknown size shows ?" "$out"
 fi
+out="$(search_run '_qb_search_print_page "$S" 0 10 80 ""
+    print -r -- "[{\"fileName\":\"big\",\"fileSize\":1099404206489,\"nbSeeders\":1}]" > '"${(q)TMP}"'/big-row.json
+    _qb_search_print_page "$(<'"${(q)TMP}"'/big-row.json)" 0 10 80 ""')"
+if [[ "$out" == *"   300.0 MiB   1000"* && "$out" == *"  1023.9 GiB      1"* ]]; then
+    pass "SIZE column shows full sizes (300.0 MiB, 1023.9 GiB)"
+else
+    fail "SIZE column shows full sizes (300.0 MiB, 1023.9 GiB)" "$out"
+fi
 expect_eq "page past the end is clamped to the last page" "Results: 24  page 3/3" \
     "$(search_run '_qb_search_print_page "$S" 99 10 80 ""' | head -n 1)"
 
