@@ -481,6 +481,31 @@ fi
 expect_eq "resolve ids: no match" "No torrent matches: zzz rc=1" \
     "$(fmt_run '_qb_resolve_hashes zzz 2>&1; print "rc=$?"' | tr '\n' ' ' | sed 's/ $//')"
 
+# pause / resume / recheck / reannounce share _qb_torrent_action: check each
+# command hits its own endpoint with the resolved hashes and prints its message.
+action_run() {
+    qbrun "
+        _qb_require_stack() { return 0; }; _qb_require_api() { return 0; }
+        _qb_resolve_hashes() { print -r -- \"\${(j:|:)@}\"; }
+        _qb_api_post() { print -r -- \"\$1 \$3\" >> ${(q)TMP}/posts; [[ -z \$FAIL ]]; }
+        : > ${(q)TMP}/posts
+        FAIL=$2; qb $1 a1b2 debian
+        print -r -- \"rc=\$? post=\$(<${(q)TMP}/posts)\"
+    " | sed -E $'s/^\r//; s/^\e\\[2K//; s/^(✓|X|■|→) //'
+}
+expect_eq "qb pause: stop endpoint, message"      "Paused rc=0 post=/api/v2/torrents/stop hashes=a1b2|debian" \
+    "$(action_run pause '' | tr '\n' ' ' | sed 's/ $//')"
+expect_eq "qb resume: start endpoint, message"    "Resumed rc=0 post=/api/v2/torrents/start hashes=a1b2|debian" \
+    "$(action_run resume '' | tr '\n' ' ' | sed 's/ $//')"
+expect_eq "qb recheck: recheck endpoint, message" "Recheck started rc=0 post=/api/v2/torrents/recheck hashes=a1b2|debian" \
+    "$(action_run recheck '' | tr '\n' ' ' | sed 's/ $//')"
+expect_eq "qb reannounce: endpoint, message"      "Reannounce sent rc=0 post=/api/v2/torrents/reannounce hashes=a1b2|debian" \
+    "$(action_run reannounce '' | tr '\n' ' ' | sed 's/ $//')"
+expect_eq "torrent action: API failure message and rc=1" "Failed to resume torrent(s)" \
+    "$(action_run resume 1 | head -n 1)"
+expect_eq "torrent action: usage without an id" "Usage: qb recheck <hash-or-name>… rc=1" \
+    "$(qbrun '_qb_require_stack() { return 0; }; _qb_require_api() { return 0; }; qb recheck; print "rc=$?"' | tr '\n' ' ' | sed 's/ $//')"
+
 # All Python lives in qb_json.py; qb.zsh pipes JSON to it on stdin.
 expect_eq "no embedded Python left in qb.zsh" "0" "$(grep -c "python3 - " "$QB")"
 

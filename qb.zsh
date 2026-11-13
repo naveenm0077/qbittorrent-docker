@@ -1451,47 +1451,38 @@ _qb_add() {
     _qb_success "Torrent added"
 }
 
-_qb_pause() {
+# Shared body of pause / resume / recheck / reannounce: usage line, id
+# resolution, one POST to /api/v2/torrents/<endpoint>, one result line.
+# Usage: _qb_torrent_action <command> <endpoint> <done-message> [id…]
+_qb_torrent_action() {
+    local name="$1"
+    local endpoint="$2"
+    local done_msg="$3"
+    shift 3
+
     _qb_require_stack || return 1
     _qb_require_api || return 1
 
     local hashes
 
     if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
-        printf "Usage: qb pause <hash-or-name>…\n"
+        printf "Usage: qb %s <hash-or-name>…\n" "$name"
         return 1
     fi
 
     hashes="$(_qb_resolve_hashes "$@")" || return 1
 
-    if ! _qb_api_post /api/v2/torrents/stop --data-urlencode "hashes=$hashes" >/dev/null; then
-        _qb_failure "Failed to pause torrent(s)"
+    if ! _qb_api_post "/api/v2/torrents/${endpoint}" --data-urlencode "hashes=$hashes" >/dev/null; then
+        _qb_failure "Failed to ${name} torrent(s)"
         return 1
     fi
 
-    _qb_success "Paused"
+    _qb_success "$done_msg"
 }
 
-_qb_resume() {
-    _qb_require_stack || return 1
-    _qb_require_api || return 1
+_qb_pause() { _qb_torrent_action pause stop "Paused" "$@"; }
 
-    local hashes
-
-    if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
-        printf "Usage: qb resume <hash-or-name>…\n"
-        return 1
-    fi
-
-    hashes="$(_qb_resolve_hashes "$@")" || return 1
-
-    if ! _qb_api_post /api/v2/torrents/start --data-urlencode "hashes=$hashes" >/dev/null; then
-        _qb_failure "Failed to resume torrent(s)"
-        return 1
-    fi
-
-    _qb_success "Resumed"
-}
+_qb_resume() { _qb_torrent_action resume start "Resumed" "$@"; }
 
 _qb_remove() {
     _qb_require_stack || return 1
@@ -1570,47 +1561,9 @@ _qb_show() {
     printf '{"props":%s,"files":%s}' "$props" "$files" | python3 "$QB_PY" show "$hash"
 }
 
-_qb_recheck() {
-    _qb_require_stack || return 1
-    _qb_require_api || return 1
+_qb_recheck() { _qb_torrent_action recheck recheck "Recheck started" "$@"; }
 
-    local hashes
-
-    if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
-        printf "Usage: qb recheck <hash-or-name>…\n"
-        return 1
-    fi
-
-    hashes="$(_qb_resolve_hashes "$@")" || return 1
-
-    if ! _qb_api_post /api/v2/torrents/recheck --data-urlencode "hashes=$hashes" >/dev/null; then
-        _qb_failure "Failed to recheck torrent(s)"
-        return 1
-    fi
-
-    _qb_success "Recheck started"
-}
-
-_qb_reannounce() {
-    _qb_require_stack || return 1
-    _qb_require_api || return 1
-
-    local hashes
-
-    if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
-        printf "Usage: qb reannounce <hash-or-name>…\n"
-        return 1
-    fi
-
-    hashes="$(_qb_resolve_hashes "$@")" || return 1
-
-    if ! _qb_api_post /api/v2/torrents/reannounce --data-urlencode "hashes=$hashes" >/dev/null; then
-        _qb_failure "Failed to reannounce torrent(s)"
-        return 1
-    fi
-
-    _qb_success "Reannounce sent"
-}
+_qb_reannounce() { _qb_torrent_action reannounce reannounce "Reannounce sent" "$@"; }
 
 _qb_force() {
     _qb_require_stack || return 1
