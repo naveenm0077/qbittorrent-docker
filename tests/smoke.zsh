@@ -301,6 +301,19 @@ await_run() {
 expect_eq "await WebUI: ready"   "wait=60 ✓ WebUI ready rc=0" "$(await_run 0)"
 expect_eq "await WebUI: timeout" "wait=60 X WebUI did not become available rc=1" "$(await_run 1)"
 
+# _qb_ensure_docker: shared by start / repair.
+ensure_run() {
+    qbrun "_qb_spinner() { :; }; _qb_docker_running() { return $1; }
+           _qb_wait_for_docker() { return 0; }
+           : > ${(q)TMP}/docker-calls
+           docker() { print -r -- \"[docker \$*]\" >> ${(q)TMP}/docker-calls; return $2; }
+           _qb_ensure_docker; rc=\$?
+           print -r -- \"\$(<${(q)TMP}/docker-calls) rc=\$rc\"" 2>&1 | sed -E $'s/\r//g; s/\e\\[2K//g' | tr '\n' ' ' | sed 's/  */ /g; s/^ //; s/ $//'
+}
+expect_eq "ensure Docker: already running, nothing to do" "rc=0" "$(ensure_run 0 0)"
+expect_eq "ensure Docker: stopped, starts Docker Desktop" "✓ Docker Desktop started [docker desktop start] rc=0" "$(ensure_run 1 0)"
+expect_eq "ensure Docker: start fails" "X Failed to start Docker Desktop [docker desktop start] rc=1" "$(ensure_run 1 1)"
+
 # qb start --cli / --app win over QB_START_UI in .env.qbittorrent.
 start_ui_run() {
     print -r -- "QB_START_UI=$1" > "$ENV_FILE"

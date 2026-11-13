@@ -404,6 +404,20 @@ _qb_wait_for_docker() {
     return 0
 }
 
+# Start Docker Desktop when the engine is not running (waits up to 60s).
+_qb_ensure_docker() {
+    _qb_docker_running && return 0
+
+    _qb_spinner "Starting Docker Desktop..."
+
+    if ! docker desktop start >/dev/null 2>&1 || ! _qb_wait_for_docker 60; then
+        _qb_failure "Failed to start Docker Desktop"
+        return 1
+    fi
+
+    _qb_success "Docker Desktop started"
+}
+
 _qb_wait_for_webui() {
     local timeout="${1:-60}"
     local elapsed=0
@@ -1075,17 +1089,7 @@ _qb_start() {
         esac
     done
 
-    if ! _qb_docker_running; then
-        _qb_spinner "Starting Docker Desktop..."
-        
-        if ! docker desktop start >/dev/null 2>&1 ||
-        ! _qb_wait_for_docker 60; then
-            _qb_failure "Failed to start Docker Desktop"
-            return 1
-        fi
-        
-        _qb_success "Docker Desktop started"
-    fi
+    _qb_ensure_docker || return 1
     
     if ! _qb_container_running; then
         mkdir -p "$QB_DOWNLOADS" || {
@@ -2358,17 +2362,7 @@ _qb_prune() {
 }
 
 _qb_repair() {
-    if ! _qb_docker_running; then
-        _qb_spinner "Starting Docker Desktop..."
-        
-        if ! docker desktop start >/dev/null 2>&1 ||
-        ! _qb_wait_for_docker 60; then
-            _qb_failure "Failed to start Docker Desktop"
-            return 1
-        fi
-        
-        _qb_success "Docker Desktop started"
-    fi
+    _qb_ensure_docker || return 1
     
     local active_count="0"
     
