@@ -727,6 +727,51 @@ _qb_port_listening() {
     lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
 }
 
+# Describe what listens on TCP PORT: "container <name>" when a Docker container
+# publishes it, otherwise "<command> (pid N)". Returns 1 when nothing listens.
+# lsof without sudo only sees this user's processes (Docker Desktop included).
+_qb_port_owner() {
+    local port="${1:-$QB_WEBUI_PORT}"
+    local names=""
+    local pid=""
+    local cmd=""
+
+    _qb_port_listening "$port" || return 1
+
+    if _qb_docker_running; then
+        names="$(docker ps --filter "publish=${port}" --format '{{.Names}}' 2>/dev/null)"
+        if [[ -n "$names" ]]; then
+            printf 'container %s\n' "${(j:, :)${(f)names}}"
+            return 0
+        fi
+    fi
+
+    pid="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -n 1)"
+    cmd="$(ps -p "$pid" -o comm= 2>/dev/null)"
+    printf '%s (pid %s)\n' "${${cmd:t}:-unknown process}" "${pid:-?}"
+}
+
+# Print the owner when the WebUI port is held by something other than the
+# qbittorrent container. Returns 1 when the port is free or ours.
+_qb_port_conflict() {
+    local owner
+
+    owner="$(_qb_port_owner "$QB_WEBUI_PORT")" || return 1
+    [[ "$owner" == "container qbittorrent" ]] && return 1
+    printf '%s\n' "$owner"
+}
+
+# Fail with the owner's name before compose tries to bind a taken WebUI port.
+_qb_require_port_free() {
+    local owner
+
+    owner="$(_qb_port_conflict)" || return 0
+
+    _qb_line fail "Port $QB_WEBUI_PORT is in use by $owner"
+    printf "Stop it, or set QB_WEBUI_PORT in %s to a free port.\n" "$QB_API_KEY_FILE"
+    return 1
+}
+
 _qb_container_mounts_ok() {
     local mounts
 
@@ -1045,7 +1090,9 @@ _qb_start() {
             _qb_failure "Failed to create downloads directory"
             return 1
         }
-        
+
+        _qb_require_port_free || return 1
+
         _qb_spinner "Starting qBittorrent..."
         
         if ! docker compose up -d >/dev/null 2>&1; then
@@ -1064,6 +1111,8 @@ _qb_start() {
             _qb_failure "Failed to create downloads directory"
             return 1
         }
+
+        _qb_require_port_free || return 1
 
         _qb_spinner "Updating container mounts/ports..."
 
@@ -2772,6 +2821,8 @@ _qb_update() {
         return 0
     fi
     
+    _qb_require_port_free || return 1
+
     _qb_spinner "Recreating qBittorrent..."
     
     if ! docker compose up -d --force-recreate >/dev/null 2>&1; then
@@ -3054,6 +3105,8 @@ _qb_repair() {
         return 1
     }
     
+    _qb_require_port_free || return 1
+
     _qb_spinner "Recreating qBittorrent..."
     
     if ! docker compose up -d --force-recreate >/dev/null 2>&1; then
@@ -3108,15 +3161,28 @@ _qb_doctor() {
             issues=1
         fi
 
-        if _qb_port_listening "$QB_WEBUI_PORT"; then
+        local port_owner=""
+
+        if port_owner="$(_qb_port_conflict)"; then
+            _qb_line fail "Port $QB_WEBUI_PORT: in use by $port_owner"
+            issues=1
+        elif _qb_port_listening "$QB_WEBUI_PORT"; then
             _qb_line ok "Port $QB_WEBUI_PORT: $(_qb_state listening)"
         else
             _qb_line fail "Port $QB_WEBUI_PORT: not listening"
             issues=1
         fi
     else
+        local port_owner=""
+
         _qb_line off "WebUI: $(_qb_state unavailable)"
-        _qb_line off "Port $QB_WEBUI_PORT: not listening"
+
+        if port_owner="$(_qb_port_conflict)"; then
+            _qb_line fail "Port $QB_WEBUI_PORT: in use by $port_owner (qb start will fail)"
+            issues=1
+        else
+            _qb_line off "Port $QB_WEBUI_PORT: free"
+        fi
     fi
 
     if _qb_container_exists; then
