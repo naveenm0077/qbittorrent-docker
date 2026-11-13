@@ -13,7 +13,7 @@ The qBittorrent service runs in Docker, stores downloads in `~/Downloads/qbittor
 
 ## Setup
 
-Clone this repository to `~/qbittorrent`, or update `QB_DIR` near the top of `qb.zsh` to match its location.
+Clone this repository anywhere (the examples below use `~/projects/qbittorrent`). `qb.zsh` locates its own directory when sourced, so no path needs editing.
 
 Create the local API-key file:
 
@@ -54,7 +54,7 @@ Color is skipped when output is not a TTY or when `NO_COLOR` is set. Set `FORCE_
 
 ### WebUI network bind (optional)
 
-By default Docker publishes the WebUI on **localhost only** (`127.0.0.1:8080`), so other devices on your Wi‑Fi cannot open the login page. The app inside the container still listens normally; this only limits the host publish.
+By default Docker publishes the WebUI on **localhost only** (`127.0.0.1:<port>`), so other devices on your Wi‑Fi cannot open the login page. The app inside the container still listens normally; this only limits the host publish.
 
 To allow LAN access (still needs password / API key):
 
@@ -63,6 +63,18 @@ QB_WEBUI_BIND=lan
 ```
 
 Then run `qb start` (recreates if the publish changed) or `qb repair`. Peer port `6881` is unchanged.
+
+### WebUI port (optional)
+
+The WebUI uses port **8090** by default. If another service on the Mac already uses that port, set a different one in `.env.qbittorrent`:
+
+```zsh
+QB_WEBUI_PORT=9090
+```
+
+This is the only place the port is set: `qb` exports it, and `compose.yaml` uses it for both the container's `WEBUI_PORT` and the host publish. Run `qb start` (recreates if the port changed) or `qb repair`.
+
+The WebUI URL changes with the port, so a Dock Web App created for the old URL must be re-created (**File → Add to Dock** at the new URL), and the column layout re-applied with `qb layout`.
 
 ### Quit behavior (optional)
 
@@ -87,7 +99,7 @@ For one run without changing the default: `qb start --cli` (or `qb start --app` 
 Load the CLI from your `~/.zshrc`:
 
 ```zsh
-source ~/qbittorrent/qb.zsh
+source ~/projects/qbittorrent/qb.zsh
 ```
 
 Restart your shell or reload the configuration:
@@ -106,7 +118,7 @@ This uses zsh’s built-in completion system. For it to register, source `qb.zsh
 autoload -Uz compinit
 compinit
 # ... other setup ...
-source ~/qbittorrent/qb.zsh
+source ~/projects/qbittorrent/qb.zsh
 ```
 
 Many Mac zsh setups (and Docker Desktop’s zsh snippet) already run `compinit`. If `compinit` was never set up, nothing fails: there is no prompt, warning, or error — Tab completion is simply unavailable and every `qb` command still works as usual.
@@ -117,7 +129,7 @@ Start qBittorrent:
 qb start
 ```
 
-The WebUI is available at [http://localhost:8080](http://localhost:8080). In Safari, use **File → Add to Dock** to create the optional qBittorrent Web App wrapper.
+The WebUI is available at [http://localhost:8090](http://localhost:8090) (or the port set in `QB_WEBUI_PORT`). In Safari, use **File → Add to Dock** to create the optional qBittorrent Web App wrapper.
 
 `qb start` opens or focuses that Dock Web App (`~/Applications/qBittorrent.app`) when `QB_START_UI=app` (default). With `QB_START_UI=cli` or `qb start --cli`, it only prints the WebUI URL — it does not open a Safari tab.
 
@@ -162,8 +174,8 @@ Torrent ids are a **hash prefix** or a **unique name substring**.
 | `qb images` | List local qBittorrent images (including dangling) with sizes and a unique total. |
 | `qb prune` | Remove unused local qBittorrent images; always keeps the image currently used by the container/compose service. |
 | `qb repair` | Recreate the qBittorrent container without touching downloads or configuration. |
-| `qb doctor` | Check Docker, container, WebUI, mounts, API auth, port 8080, and local directories. |
-| `qb layout` | Optional one-shot helper to apply the torrent table column layout (see below). |
+| `qb doctor` | Check Docker, container, WebUI, mounts, API auth, the WebUI port, and local directories. |
+| `qb layout` | Copy the column layout script to the clipboard and print the Web Inspector steps (see below). |
 | `qb help` | Show the command list. |
 
 ### When the stack is not running
@@ -181,7 +193,7 @@ qBittorrent’s WebUI torrent table can show many columns. Visibility and order 
 
 `webui-layout.js` is a small one-shot script that writes those keys, then reloads the page. It does not change download behavior, categories, or server settings — only which torrent-list columns you see and in what order.
 
-You only need to apply it once per browser / Web App profile, unless you clear Safari site data for `http://localhost:8080`.
+You only need to apply it once per browser / Web App profile, unless you clear Safari site data for `http://localhost:8090`.
 
 This is optional. Skip it if you prefer the default columns.
 
@@ -203,7 +215,7 @@ So visibility and “being listed” are separate ideas:
 
 A key only in `wanted` but missing from `allColumns` can still appear in the order string, but this script will not set that column’s visibility flag. Put keys you care about in **both** when you want the script to manage them.
 
-The `wanted` list shipped in this repo is just a starter layout (compact download-focused columns). Change the arrays to suit you, save the file, then apply the script again (console paste or `qb layout`). You can also toggle columns from the WebUI table header menu; re-running the script overwrites browser prefs with whatever is in the file.
+The `wanted` list shipped in this repo is just a starter layout (compact download-focused columns). Change the arrays to suit you, save the file, then apply the script again (`qb layout`). You can also toggle columns from the WebUI table header menu; re-running the script overwrites browser prefs with whatever is in the file.
 
 **Starter `wanted` in this repo** (visible, left → right):  
 `name`, `progress`, `eta`, `total_size`, `downloaded`, `amount_left`, `dlspeed`, `num_seeds`, `num_leechs`, `status`, `ratio`
@@ -234,35 +246,20 @@ WebUI column ids used in `allColumns` / `wanted` (labels can vary slightly by qB
 | `ratio` | Ratio | `availability` | Availability |
 | `popularity` | Popularity | `last_seen_complete` | Last Seen Complete |
 
-### Option A — Console paste (recommended)
+### Applying the script
 
-No special Safari permissions. Same idea as pasting a snippet in a browser DevTools console.
-
-1. Start the WebUI (`qb start`) so the Dock Web App is open.
-2. Open the Web Inspector console for that Web App:  
-   **Develop → [qBittorrent] → Show Web Inspector → Console**  
-   (If **Develop** is missing: Safari → **Settings → Advanced → Show features for web developers**.)
-3. Open `webui-layout.js` from this repo, copy its full contents, paste into the console, and press Enter.
-4. The page reloads with the new columns.
-
-### Option B — `qb layout`
-
-Automates the same script by injecting into the Dock Web App only (not a Safari tab).
+Safari Web Apps on current macOS do not accept Apple Events, so the script cannot be injected automatically. `qb layout` opens the Dock Web App, copies `webui-layout.js` to the clipboard, and prints the steps below.
 
 ```zsh
 qb layout
 ```
 
-**Permission required (one-time Safari setting):**
+1. Safari → **Develop → [this Mac's name] → qBittorrent (localhost:8090)**, or **Develop → Inspect Apps and Devices**. A Web Inspector attached to the Dock Web App opens.  
+   (If **Develop** is missing: Safari → **Settings → Advanced → Show features for web developers**.)
+2. **Console** tab → paste → Return.
+3. The page reloads with the new columns.
 
-1. Safari → **Settings → Advanced** → enable **Show features for web developers**.
-2. Menu bar → **Develop → Allow JavaScript from Apple Events**.
-
-**Risk:** that setting is global for Safari. While it is on, other apps on your Mac that can send Apple Events may run JavaScript in open Safari / Web App pages — not only `qb layout`. Safari disables it by default for that reason.
-
-**Safer use:** turn the setting on → run `qb layout` → turn it off again. The column layout remains saved in `localStorage` after you disable the setting.
-
-If automation fails, use Option A instead.
+The Web App's own settings window has no developer options; the inspector is reached only through Safari's **Develop** menu. No **Allow JavaScript from Apple Events** permission is needed.
 
 ## Project directories
 
@@ -274,7 +271,7 @@ If automation fails, use Option A instead.
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
 | `plugins/` | Local search plugins (third-party Python — review before enabling). Use `qb plugins` / `qb search`. |
 | `webui-layout.js` | Column layout script used by `qb layout`. |
-| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_STYLE`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`, `QB_START_UI`. |
+| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_STYLE`, `QB_WEBUI_PORT`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`, `QB_START_UI`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
 
@@ -282,7 +279,7 @@ If automation fails, use Option A instead.
 
 | Port | Protocol | Purpose |
 | --- | --- | --- |
-| 8080 | TCP | qBittorrent WebUI (default host bind: localhost only; see `QB_WEBUI_BIND`) |
+| 8090 | TCP | qBittorrent WebUI (default; change with `QB_WEBUI_PORT`. Default host bind: localhost only; see `QB_WEBUI_BIND`) |
 | 6881 | TCP/UDP | BitTorrent peer connections |
 
 The WebUI is intended for local use. Default publish is `127.0.0.1` only. Set `QB_WEBUI_BIND=lan` if you knowingly want LAN access, and keep a strong WebUI password / API key.

@@ -1,13 +1,15 @@
 # qBittorrent CLI
 # Loaded from ~/.zshrc
 
-emulate -L zsh
-
-QB_DIR="$HOME/qbittorrent"
+# Repo directory = wherever this file lives (symlinks resolved), so the
+# clone location does not matter.
+QB_DIR="${${(%):-%x}:A:h}"
 QB_DOWNLOADS_DEFAULT="$HOME/Downloads/qbittorrent-downloads"
 QB_DOWNLOADS="$QB_DOWNLOADS_DEFAULT"
 QB_APP="$HOME/Applications/qBittorrent.app"
-QB_URL="http://localhost:8080"
+QB_WEBUI_PORT_DEFAULT=8090
+typeset -g QB_WEBUI_PORT="$QB_WEBUI_PORT_DEFAULT"
+typeset -g QB_URL="http://localhost:${QB_WEBUI_PORT}"
 QB_API_KEY_FILE="$QB_DIR/.env.qbittorrent"
 QB_IMAGE_STALE_DAYS=90
 QB_QUIT_LOCK="$QB_DIR/.qb-quit.lock"
@@ -15,7 +17,7 @@ QB_STYLE_DEFAULT="color"
 typeset -g QB_STYLE="$QB_STYLE_DEFAULT"
 QB_WEBUI_BIND_DEFAULT="localhost"
 typeset -g QB_WEBUI_BIND="$QB_WEBUI_BIND_DEFAULT"
-typeset -g QB_WEBUI_PUBLISH="127.0.0.1:8080"
+typeset -g QB_WEBUI_PUBLISH="127.0.0.1:${QB_WEBUI_PORT}"
 QB_QUIT_DOCKER_DEFAULT="stop"
 typeset -g QB_QUIT_DOCKER="$QB_QUIT_DOCKER_DEFAULT"
 QB_START_UI_DEFAULT="app"
@@ -431,11 +433,50 @@ _qb_refresh_downloads() {
     export QB_DOWNLOADS
 }
 
+# Load QB_WEBUI_PORT from .env.qbittorrent (optional). Default: 8090.
+# Single source of truth for the WebUI port: exported so compose.yaml uses it
+# for both the container's WEBUI_PORT and the host publish.
+# File wins when set; otherwise keep current value (allows QB_WEBUI_PORT=9000 qb start).
+_qb_refresh_webui_port() {
+    local configured=""
+    local line=""
+
+    if [[ -f "$QB_API_KEY_FILE" ]]; then
+        line="$(
+            grep -E '^[[:space:]]*QB_WEBUI_PORT[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
+                tail -n 1
+        )"
+        configured="${line#*=}"
+        configured="${configured//$'\r'/}"
+        configured="${configured//$'\n'/}"
+        configured="${configured#"${configured%%[![:space:]]*}"}"
+        configured="${configured%"${configured##*[![:space:]]}"}"
+        configured="${configured#\"}"
+        configured="${configured%\"}"
+        configured="${configured#\'}"
+        configured="${configured%\'}"
+    fi
+
+    if [[ -n "$configured" ]]; then
+        QB_WEBUI_PORT="$configured"
+    fi
+
+    if [[ ! "$QB_WEBUI_PORT" =~ '^[0-9]+$' ]] || (( QB_WEBUI_PORT < 1 || QB_WEBUI_PORT > 65535 )); then
+        QB_WEBUI_PORT="$QB_WEBUI_PORT_DEFAULT"
+    fi
+
+    QB_URL="http://localhost:${QB_WEBUI_PORT}"
+    export QB_WEBUI_PORT
+}
+
 # Load QB_WEBUI_BIND from .env.qbittorrent (optional). Default: localhost-only publish.
-# localhost → 127.0.0.1:8080:8080 ; lan → 0.0.0.0:8080:8080
+# localhost → 127.0.0.1:PORT:PORT ; lan → 0.0.0.0:PORT:PORT (PORT = QB_WEBUI_PORT)
+# Refreshes the port first, so every caller gets a consistent port, URL and publish.
 _qb_refresh_webui_bind() {
     local configured=""
     local line=""
+
+    _qb_refresh_webui_port
 
     if [[ -f "$QB_API_KEY_FILE" ]]; then
         line="$(
@@ -471,10 +512,10 @@ _qb_refresh_webui_bind() {
     fi
 
     if [[ "$QB_WEBUI_BIND" == "lan" ]]; then
-        QB_WEBUI_PUBLISH="0.0.0.0:8080"
+        QB_WEBUI_PUBLISH="0.0.0.0:${QB_WEBUI_PORT}"
     else
         QB_WEBUI_BIND="localhost"
-        QB_WEBUI_PUBLISH="127.0.0.1:8080"
+        QB_WEBUI_PUBLISH="127.0.0.1:${QB_WEBUI_PORT}"
     fi
 
     export QB_WEBUI_BIND
@@ -586,7 +627,7 @@ _qb_downloads_mount_matches() {
     [[ "$src" == "$QB_DOWNLOADS" ]]
 }
 
-# True when container's published 8080 HostIp matches QB_WEBUI_BIND.
+# True when container publishes QB_WEBUI_PORT and its HostIp matches QB_WEBUI_BIND.
 _qb_webui_publish_matches() {
     local host_ip
 
@@ -594,14 +635,14 @@ _qb_webui_publish_matches() {
 
     host_ip="$(
         docker inspect qbittorrent \
-            --format '{{with index .HostConfig.PortBindings "8080/tcp"}}{{with index . 0}}{{.HostIp}}{{end}}{{end}}' \
+            --format "{{with index .HostConfig.PortBindings \"${QB_WEBUI_PORT}/tcp\"}}{{with index . 0}}bound:{{.HostIp}}{{end}}{{end}}" \
             2>/dev/null
     )"
 
     if [[ "$QB_WEBUI_BIND" == "lan" ]]; then
-        [[ -z "$host_ip" || "$host_ip" == "0.0.0.0" ]]
+        [[ "$host_ip" == "bound:" || "$host_ip" == "bound:0.0.0.0" ]]
     else
-        [[ "$host_ip" == "127.0.0.1" ]]
+        [[ "$host_ip" == "bound:127.0.0.1" ]]
     fi
 }
 
@@ -688,7 +729,7 @@ _qb_require_api() {
     return 0
 }
 
-# Stricter than UI root curl: proves qBit API (not a random :8080 listener).
+# Stricter than UI root curl: proves qBit API (not a random listener on the WebUI port).
 # Prefer auth when a real API key is configured; otherwise try public version, then UI root.
 _qb_stack_ready() {
     if _qb_api_ok; then
@@ -714,12 +755,12 @@ _qb_stack_ready() {
         return $?
     fi
 
-    # Key present but auth failed — do not treat a generic :8080 page as OK.
+    # Key present but auth failed — do not treat a generic page on the WebUI port as OK.
     return 1
 }
 
 _qb_port_listening() {
-    local port="${1:-8080}"
+    local port="${1:-$QB_WEBUI_PORT}"
 
     lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
 }
@@ -3100,15 +3141,15 @@ _qb_doctor() {
             issues=1
         fi
 
-        if _qb_port_listening 8080; then
-            _qb_line ok "Port 8080: $(_qb_state listening)"
+        if _qb_port_listening "$QB_WEBUI_PORT"; then
+            _qb_line ok "Port $QB_WEBUI_PORT: $(_qb_state listening)"
         else
-            _qb_line fail "Port 8080: not listening"
+            _qb_line fail "Port $QB_WEBUI_PORT: not listening"
             issues=1
         fi
     else
         _qb_line off "WebUI: $(_qb_state unavailable)"
-        _qb_line off "Port 8080: not listening"
+        _qb_line off "Port $QB_WEBUI_PORT: not listening"
     fi
 
     if _qb_container_exists; then
@@ -3176,7 +3217,6 @@ _qb_doctor() {
 
 _qb_layout() {
     local layout_js="$QB_DIR/webui-layout.js"
-    local err
 
     if [[ ! -f "$layout_js" ]]; then
         _qb_failure "Layout script not found: $layout_js"
@@ -3192,38 +3232,20 @@ _qb_layout() {
 
     _qb_open_app || return 1
 
-    _qb_spinner "Applying WebUI column layout..."
-
-    if err="$(
-        osascript - "$layout_js" <<'APPLESCRIPT' 2>&1
-on run argv
-    set jsPath to item 1 of argv
-    set js to do shell script "cat " & quoted form of jsPath
-
-    tell application "qBittorrent"
-        activate
-        delay 2
-        do JavaScript js in front document
-    end tell
-end run
-APPLESCRIPT
-    )"; then
-        _qb_success "WebUI column layout applied"
-        _qb_line info "Only needed again if Safari site data is cleared"
-        return 0
+    # Safari Web Apps don't accept Apple Events (no `do JavaScript`), so the
+    # script goes through the clipboard and Safari's Web Inspector instead.
+    if ! pbcopy <"$layout_js" 2>/dev/null; then
+        _qb_failure "Failed to copy layout script to clipboard"
+        return 1
     fi
 
-    _qb_failure "Failed to apply WebUI layout"
-    printf "qb layout injects only into the Dock Web App (not a Safari tab).\n"
-    printf "Needs: Safari → Develop → Allow JavaScript from Apple Events\n"
-    printf "That setting lets other apps inject JS into Safari pages; turn it off after use if you prefer.\n"
-    printf "Safer alternative: paste webui-layout.js into the Web Inspector console (see README).\n"
-
-    if [[ -n "$err" ]]; then
-        printf "%s\n" "$err"
-    fi
-
-    return 1
+    _qb_success "Layout script copied to clipboard"
+    printf "Apply it in the Dock Web App:\n"
+    printf "  1. Safari → Develop → %s → qBittorrent (%s)\n" "$(scutil --get ComputerName 2>/dev/null || hostname -s)" "${QB_URL#http://}"
+    printf "     (or Develop → Inspect Apps and Devices)\n"
+    printf "  2. Console tab → ⌘V → Return\n"
+    printf "The page reloads with the new columns.\n"
+    printf "Develop menu missing: Safari → Settings → Advanced → Show features for web developers\n"
 }
 
 _qb_help() {
@@ -3258,7 +3280,7 @@ _qb_help() {
         "  qb prune       Remove unused local qBittorrent images (keeps the active one)" \
         "  qb repair      Recreate a broken qBittorrent container" \
         "  qb doctor      Diagnose Docker, mounts, API, port, and local dirs" \
-        "  qb layout      Optional: apply WebUI column layout (needs Safari Apple Events JS; see README)"
+        "  qb layout      Copy WebUI column layout script + print Web Inspector steps"
 }
 
 qb() {
@@ -3425,9 +3447,15 @@ if (( $+functions[compdef] )); then
     compdef _qb_complete qb
 fi
 
-_qb_refresh_style
-_qb_refresh_downloads
-_qb_refresh_webui_bind
-_qb_refresh_quit_docker
-_qb_refresh_start_ui
-_qb_update_color_ok
+# Anonymous function so emulate -L stays scoped and doesn't touch the
+# options of the shell sourcing this file.
+() {
+    emulate -L zsh
+
+    _qb_refresh_style
+    _qb_refresh_downloads
+    _qb_refresh_webui_bind
+    _qb_refresh_quit_docker
+    _qb_refresh_start_ui
+    _qb_update_color_ok
+}

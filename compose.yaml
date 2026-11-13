@@ -7,7 +7,7 @@ services:
       PUID: 501
       PGID: 20
       TZ: Asia/Kolkata
-      WEBUI_PORT: 8080
+      WEBUI_PORT: ${QB_WEBUI_PORT:-8090}
 
     volumes:
       - ./config:/config
@@ -15,7 +15,7 @@ services:
       - ./plugins:/plugins
 
     ports:
-      - "${QB_WEBUI_PUBLISH:-127.0.0.1:8080}:8080"
+      - "${QB_WEBUI_PUBLISH:-127.0.0.1:8090}:${QB_WEBUI_PORT:-8090}"
       - "6881:6881"
       - "6881:6881/udp"
 
