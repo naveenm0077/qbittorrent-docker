@@ -293,6 +293,14 @@ else
     fail "start / quit / restart / repair leave the shell's directory alone" "$out"
 fi
 
+# _qb_await_webui: shared by start / restart / update / repair.
+await_run() {
+    qbrun "_qb_spinner() { :; }; _qb_wait_for_webui() { print -n \"wait=\$1 \"; return $1; }
+           _qb_await_webui; print \" rc=\$?\"" | sed -E $'s/\r//g; s/\e\\[2K//g' | tr '\n' ' ' | sed 's/  */ /g; s/ $//'
+}
+expect_eq "await WebUI: ready"   "wait=60 ✓ WebUI ready rc=0" "$(await_run 0)"
+expect_eq "await WebUI: timeout" "wait=60 X WebUI did not become available rc=1" "$(await_run 1)"
+
 # qb start --cli / --app win over QB_START_UI in .env.qbittorrent.
 start_ui_run() {
     print -r -- "QB_START_UI=$1" > "$ENV_FILE"

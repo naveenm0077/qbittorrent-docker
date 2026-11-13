@@ -420,6 +420,18 @@ _qb_wait_for_webui() {
     return 0
 }
 
+# Spinner while the WebUI comes up (up to 60s), then a ready or failed line.
+_qb_await_webui() {
+    _qb_spinner "Waiting for WebUI..."
+
+    if ! _qb_wait_for_webui 60; then
+        _qb_failure "WebUI did not become available"
+        return 1
+    fi
+
+    _qb_success "WebUI ready"
+}
+
 _qb_api_key() {
     _qb_env_get QBIT_API_KEY
 }
@@ -1114,14 +1126,7 @@ _qb_start() {
     fi
     
     if ! _qb_webui_ready; then
-        _qb_spinner "Waiting for WebUI..."
-        
-        if ! _qb_wait_for_webui 60; then
-            _qb_failure "WebUI did not become available"
-            return 1
-        fi
-        
-        _qb_success "WebUI ready"
+        _qb_await_webui || return 1
     else
         _qb_line ok "WebUI ready"
     fi
@@ -1229,14 +1234,7 @@ _qb_restart() {
         
         _qb_success "qBittorrent restarted"
         
-        _qb_spinner "Waiting for WebUI..."
-        
-        if ! _qb_wait_for_webui 60; then
-            _qb_failure "WebUI did not become available"
-            return 1
-        fi
-        
-        _qb_success "WebUI ready"
+        _qb_await_webui || return 1
         
         _qb_present_webui
         return $?
@@ -2293,14 +2291,7 @@ _qb_update() {
     
     _qb_success "qBittorrent recreated"
     
-    _qb_spinner "Waiting for WebUI..."
-    
-    if ! _qb_wait_for_webui 60; then
-        _qb_failure "WebUI did not become available"
-        return 1
-    fi
-    
-    _qb_success "WebUI ready"
+    _qb_await_webui || return 1
 
     if _qb_remove_image_id "$old_id"; then
         _qb_line ok "Removed previous image $(_qb_short_image_id "$old_id")"
@@ -2449,14 +2440,7 @@ _qb_repair() {
     
     _qb_success "qBittorrent recreated"
     
-    _qb_spinner "Waiting for WebUI..."
-    
-    if ! _qb_wait_for_webui 60; then
-        _qb_failure "WebUI did not become available"
-        return 1
-    fi
-    
-    _qb_success "WebUI ready"
+    _qb_await_webui || return 1
     
     _qb_present_webui
 }
