@@ -1,0 +1,13 @@
+#!/bin/sh
+# Run the qb smoke test when files it checks are part of the commit.
+# Enable once per clone: git config core.hooksPath .githooks
+if git diff --cached --name-only |
+    grep -qE '^(qb\.zsh|qb_json\.py|compose\.yaml|README\.md|webui-layout\.js|tests/.*|\.githooks/pre-commit)$'; then
+    out="$(zsh tests/smoke.zsh 2>&1)"
+    status=$?
+    if [ $status -ne 0 ]; then
+        printf '%s\n\nSmoke test failed; commit blocked. Skip once with: git commit --no-verify\n' "$out"
+        exit 1
+    fi
+    printf '%s\n' "$out" | tail -n 1
+fi

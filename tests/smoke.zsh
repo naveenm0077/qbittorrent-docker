@@ -626,6 +626,32 @@ expect_eq "search cleanup: finished job is deleted" "rc=0 delete id=42;" "$(clea
 expect_eq "search cleanup: timed-out job is stopped, then deleted" "rc=0 stop id=42;delete id=42;" "$(cleanup_run Running ok)"
 expect_eq "search cleanup: failed results fetch stops and deletes" "rc=1 stop id=42;delete id=42;" "$(cleanup_run Stopped fetchfail)"
 
+# 7c. Pre-commit hook (.githooks/pre-commit), with stand-in git and zsh ----
+printf '\nPre-commit hook\n'
+
+HOOK="$REPO/.githooks/pre-commit"
+if [[ -x "$HOOK" ]] && sh -n "$HOOK" 2>/dev/null; then
+    pass "hook is executable and parses (sh -n)"
+else
+    fail "hook is executable and parses (sh -n)" "$HOOK"
+fi
+# Fake git lists one staged path; fake zsh stands in for the smoke run.
+mkdir -p "$TMP/hookbin"
+print -r -- '#!/bin/sh
+printf "%s\n" "$STAGED"' > "$TMP/hookbin/git"
+print -r -- '#!/bin/sh
+echo SMOKE-RAN' > "$TMP/hookbin/zsh"
+chmod +x "$TMP/hookbin/git" "$TMP/hookbin/zsh"
+hook_fires() {
+    local p
+    for p in "$@"; do
+        STAGED="$p" PATH="$TMP/hookbin:$PATH" sh "$HOOK" | grep -q SMOKE-RAN && print -n "$p=run " || print -n "$p=skip "
+    done
+}
+expect_eq "hook runs the smoke test for every file it checks, not for notes" \
+    "qb.zsh=run qb_json.py=run compose.yaml=run README.md=run webui-layout.js=run tests/fixtures/torrents.json=run .githooks/pre-commit=run .env.example=skip " \
+    "$(hook_fires qb.zsh qb_json.py compose.yaml README.md webui-layout.js tests/fixtures/torrents.json .githooks/pre-commit .env.example)"
+
 # 8. Read-only commands against the real Docker state -----------------------
 printf '\nRead-only commands\n'
 

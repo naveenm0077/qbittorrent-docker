@@ -287,6 +287,7 @@ The Web App's own settings window has no developer options; the inspector is rea
 | `webui-layout.js` | Column layout script used by `qb layout`. |
 | `tests/smoke.zsh` | Read-only smoke test (see [Tests](#tests)). |
 | `tests/fixtures/` | Sample qBittorrent API responses (and expected output) used by the smoke test. |
+| `.githooks/pre-commit` | Runs the smoke test before a commit that touches the CLI, Compose file, README, layout script or tests. |
 | `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_PUID`, `QB_PGID`, `QB_TZ`, `QB_STYLE`, `QB_WEBUI_PORT`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`, `QB_START_UI`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
@@ -310,6 +311,12 @@ The smoke test is read-only: it never starts, stops, or recreates Docker or the 
 - That `qb status` and `qb doctor` run without shell errors, and that stack commands fail fast with `Run: qb start` when Docker is down.
 
 It exits non-zero when any check fails.
+
+A versioned pre-commit hook in `.githooks/` runs the smoke test when a commit includes `qb.zsh`, `qb_json.py`, `compose.yaml`, `README.md`, `webui-layout.js` or anything under `tests/`, and blocks the commit on failure (skip once with `git commit --no-verify`). Git does not enable repository hooks automatically; enable it once per clone:
+
+```zsh
+git config core.hooksPath .githooks
+```
 
 ## Ports
 
