@@ -76,6 +76,18 @@ This is the only place the port is set: `qb` exports it, and `compose.yaml` uses
 
 The WebUI URL changes with the port, so a Dock Web App created for the old URL must be re-created (**File → Add to Dock** at the new URL), and the column layout re-applied with `qb layout`.
 
+### Container user and timezone (optional)
+
+The container runs as the current Mac user and group (`id -u` / `id -g`), so downloaded files are owned by that user, and uses the Mac's system timezone (from `/etc/localtime`). To override any of these, set in `.env.qbittorrent`:
+
+```zsh
+QB_PUID=501
+QB_PGID=20
+QB_TZ=Asia/Kolkata
+```
+
+`QB_TZ` takes an IANA zone name. Run `qb start` or `qb repair` after changing them; Compose recreates the container when its environment differs.
+
 ### Quit behavior (optional)
 
 By default `qb quit` also stops Docker Desktop when no other containers are running. To leave Docker Desktop up and only stop qBittorrent, set in `.env.qbittorrent`:
@@ -271,7 +283,7 @@ The Web App's own settings window has no developer options; the inspector is rea
 | `~/Downloads/qbittorrent-downloads` | Default download folder (override with `QB_DOWNLOADS`). |
 | `plugins/` | Local search plugins (third-party Python — review before enabling). Use `qb plugins` / `qb search`. |
 | `webui-layout.js` | Column layout script used by `qb layout`. |
-| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_STYLE`, `QB_WEBUI_PORT`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`, `QB_START_UI`. |
+| `.env.qbittorrent` | Local WebUI API key, optional `QB_DOWNLOADS`, `QB_PUID`, `QB_PGID`, `QB_TZ`, `QB_STYLE`, `QB_WEBUI_PORT`, `QB_WEBUI_BIND`, `QB_QUIT_DOCKER`, `QB_START_UI`. |
 
 `config/`, `plugins/`, and `.env.qbittorrent` are intentionally ignored by Git because they can contain local data, credentials, or third-party files.
 

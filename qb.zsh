@@ -418,6 +418,43 @@ _qb_refresh_downloads() {
     export QB_DOWNLOADS
 }
 
+# Load QB_PUID / QB_PGID / QB_TZ from .env.qbittorrent (optional) and export
+# for compose (container PUID, PGID, TZ). Defaults follow the Mac: current
+# user and group ids, and the system timezone from /etc/localtime.
+_qb_refresh_container_env() {
+    local configured
+    local zone
+
+    configured="$(_qb_env_get QB_PUID)"
+    if [[ "$configured" =~ '^[0-9]+$' ]]; then
+        QB_PUID="$configured"
+    else
+        QB_PUID="$(id -u)"
+    fi
+
+    configured="$(_qb_env_get QB_PGID)"
+    if [[ "$configured" =~ '^[0-9]+$' ]]; then
+        QB_PGID="$configured"
+    else
+        QB_PGID="$(id -g)"
+    fi
+
+    configured="$(_qb_env_get QB_TZ)"
+    if [[ -n "$configured" ]]; then
+        QB_TZ="$configured"
+    else
+        # /etc/localtime -> /var/db/timezone/zoneinfo/Asia/Kolkata
+        zone="$(readlink /etc/localtime 2>/dev/null)"
+        if [[ "$zone" == */zoneinfo/* ]]; then
+            QB_TZ="${zone#*/zoneinfo/}"
+        else
+            QB_TZ="Etc/UTC"
+        fi
+    fi
+
+    export QB_PUID QB_PGID QB_TZ
+}
+
 # Load QB_WEBUI_PORT from .env.qbittorrent (optional). Default: 8090.
 # Single source of truth for the WebUI port: exported so compose.yaml uses it
 # for both the container's WEBUI_PORT and the host publish.
@@ -958,6 +995,7 @@ _qb_close_app() {
 
 _qb_start() {
     _qb_refresh_downloads
+    _qb_refresh_container_env
     _qb_refresh_webui_bind
     _qb_refresh_start_ui
 
@@ -1059,6 +1097,7 @@ _qb_start() {
 
 _qb_quit() {
     _qb_refresh_downloads
+    _qb_refresh_container_env
     _qb_refresh_webui_bind
     _qb_refresh_quit_docker
 
@@ -1153,6 +1192,7 @@ _qb_quit() {
 
 _qb_restart() {
     _qb_refresh_downloads
+    _qb_refresh_container_env
     _qb_refresh_webui_bind
     _qb_refresh_start_ui
 
@@ -2654,6 +2694,7 @@ _qb_update() {
     _qb_require_stack || return 1
     _qb_require_api || return 1
     _qb_refresh_downloads
+    _qb_refresh_container_env
     _qb_refresh_webui_bind
     _qb_refresh_start_ui
 
@@ -2953,6 +2994,7 @@ _qb_prune() {
 
 _qb_repair() {
     _qb_refresh_downloads
+    _qb_refresh_container_env
     _qb_refresh_webui_bind
     _qb_refresh_start_ui
 
@@ -3213,6 +3255,7 @@ qb() {
 
     _qb_refresh_style
     _qb_refresh_downloads
+    _qb_refresh_container_env
     _qb_refresh_webui_bind
     _qb_refresh_quit_docker
     _qb_refresh_start_ui
@@ -3379,6 +3422,7 @@ fi
 
     _qb_refresh_style
     _qb_refresh_downloads
+    _qb_refresh_container_env
     _qb_refresh_webui_bind
     _qb_refresh_quit_docker
     _qb_refresh_start_ui
