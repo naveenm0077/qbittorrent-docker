@@ -281,10 +281,17 @@ _qb_failure() {
 
 typeset -g QB_COMPOSE_OUTPUT=""
 
+# docker compose for this repo from any directory. qb is a shell function, so
+# a `cd "$QB_DIR"` here would move the user's own shell; point compose at the
+# project instead.
+_qb_dc() {
+    docker compose --project-directory "$QB_DIR" -f "$QB_DIR/compose.yaml" "$@"
+}
+
 # Run docker compose without printing; keep its output for _qb_compose_error.
 # Usage: if ! _qb_compose up -d; then _qb_failure "..."; _qb_compose_error; fi
 _qb_compose() {
-    QB_COMPOSE_OUTPUT="$(docker compose "$@" 2>&1)"
+    QB_COMPOSE_OUTPUT="$(_qb_dc "$@" 2>&1)"
 }
 
 # Print the last lines of the failed compose run, indented under the failure.
@@ -839,7 +846,7 @@ _qb_other_containers() {
 _qb_service_image() {
     local image
 
-    image="$(docker compose config --images 2>/dev/null | head -n 1)"
+    image="$(_qb_dc config --images 2>/dev/null | head -n 1)"
     [[ -n "$image" ]] || return 1
 
     printf '%s\n' "$image"
@@ -931,7 +938,6 @@ _qb_kept_image_id() {
         fi
     fi
 
-    cd "$QB_DIR" 2>/dev/null || return 1
     image="$(_qb_service_image)" || return 1
     _qb_image_id "$image"
 }
@@ -1075,11 +1081,6 @@ _qb_start() {
     fi
     
     if ! _qb_container_running; then
-        cd "$QB_DIR" || {
-            _qb_failure "qBittorrent directory not found"
-            return 1
-        }
-
         mkdir -p "$QB_DOWNLOADS" || {
             _qb_failure "Failed to create downloads directory"
             return 1
@@ -1097,11 +1098,6 @@ _qb_start() {
         
         _qb_success "qBittorrent started"
     elif ! _qb_downloads_mount_matches || ! _qb_webui_publish_matches; then
-        cd "$QB_DIR" || {
-            _qb_failure "qBittorrent directory not found"
-            return 1
-        }
-
         mkdir -p "$QB_DOWNLOADS" || {
             _qb_failure "Failed to create downloads directory"
             return 1
@@ -1185,11 +1181,6 @@ _qb_quit() {
     _qb_close_app
 
     if _qb_container_running; then
-        cd "$QB_DIR" || {
-            _qb_failure "qBittorrent directory not found"
-            return 1
-        }
-
         _qb_spinner "Stopping qBittorrent..."
 
         if ! _qb_compose stop; then
@@ -1243,11 +1234,6 @@ _qb_restart() {
     _qb_refresh_start_ui
 
     if _qb_container_running; then
-        cd "$QB_DIR" || {
-            _qb_failure "qBittorrent directory not found"
-            return 1
-        }
-        
         _qb_spinner "Restarting qBittorrent..."
         
         if ! _qb_compose restart; then
@@ -2291,11 +2277,6 @@ _qb_update() {
     _qb_refresh_webui_bind
     _qb_refresh_start_ui
 
-    cd "$QB_DIR" || {
-        _qb_failure "qBittorrent directory not found"
-        return 1
-    }
-
     local response
     response="$(_qb_active_downloads)" || {
         _qb_failure "Failed to check active downloads"
@@ -2508,11 +2489,6 @@ _qb_repair() {
         _qb_success "qBittorrent container removed"
     fi
     
-    cd "$QB_DIR" || {
-        _qb_failure "qBittorrent directory not found"
-        return 1
-    }
-
     _qb_require_port_free || return 1
 
     _qb_spinner "Recreating qBittorrent..."

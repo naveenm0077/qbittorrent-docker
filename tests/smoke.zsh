@@ -269,6 +269,30 @@ else
     fail "qb repair stops before compose when the port is taken" "$out"
 fi
 
+# qb is a shell function: lifecycle commands must not change the caller's
+# directory, and compose must be pointed at the repo explicitly.
+: > "$ENV_FILE"
+out="$(qbrun "
+    _qb_docker_running() { return 0; }; _qb_container_running() { return \$RUNNING; }
+    _qb_container_exists() { return 1; }; _qb_require_port_free() { return 0; }
+    _qb_webui_ready() { return 0; }; _qb_wait_for_webui() { return 0; }; _qb_image_age_notice() { :; }
+    _qb_present_webui() { :; }; _qb_close_app() { :; }; _qb_other_containers() { :; }; _qb_spinner() { :; }
+    _qb_quit_lock_acquire() { return 0; }; _qb_quit_lock_release() { :; }
+    docker() { [[ \$1 == compose ]] && print -r -- \"\$*\" >> ${(q)TMP}/dc-calls; return 0; }
+    : > ${(q)TMP}/dc-calls
+    cd ${(q)TMP}
+    RUNNING=1; qb start --cli >/dev/null 2>&1
+    RUNNING=0; qb quit >/dev/null 2>&1; qb restart >/dev/null 2>&1
+    RUNNING=1; qb repair >/dev/null 2>&1
+    print -r -- \"pwd=\$PWD\"
+    print -r -- \"compose-calls=\$(grep -c . ${(q)TMP}/dc-calls) with-project=\$(grep -c -- '--project-directory ${REPO} -f ${REPO}/compose.yaml' ${(q)TMP}/dc-calls)\"
+")"
+if [[ "$out" == "pwd=${TMP:a}"$'\n'"compose-calls=4 with-project=4" ]]; then
+    pass "start / quit / restart / repair leave the shell's directory alone"
+else
+    fail "start / quit / restart / repair leave the shell's directory alone" "$out"
+fi
+
 # qb start --cli / --app win over QB_START_UI in .env.qbittorrent.
 start_ui_run() {
     print -r -- "QB_START_UI=$1" > "$ENV_FILE"
@@ -340,6 +364,8 @@ repair_run() {
         _qb_present_webui() { :; }
         _qb_spinner() { :; }
         docker() {
+            # Drop qb's --project-directory DIR -f FILE so calls read as 'compose <cmd>'.
+            [[ \$1 == compose && \$2 == --project-directory ]] && set -- compose \"\${@:6}\"
             print -r -- \"\$*\" >> \$CALLS
             case \"\$*\" in
                 'compose pull') [[ \$MODE == pullfail ]] && return 1; return 0 ;;
