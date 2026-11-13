@@ -76,29 +76,42 @@ _qb_spinner() {
     QB_SPINNER_PID=$!
 }
 
+# Print the value of KEY from .env.qbittorrent (last assignment wins).
+# Accepts spaces around "=", strips CR, surrounding whitespace and surrounding
+# quotes. Returns 1 when the file or key is missing or the value is empty.
+# Usage: value="$(_qb_env_get QB_STYLE)"
+_qb_env_get() {
+    local key="$1"
+    local value=""
+
+    [[ -f "$QB_API_KEY_FILE" ]] || return 1
+
+    value="$(
+        grep -E "^[[:space:]]*${key}[[:space:]]*=" "$QB_API_KEY_FILE" 2>/dev/null |
+            tail -n 1
+    )"
+    [[ -n "$value" ]] || return 1
+
+    value="${value#*=}"
+    value="${value//$'\r'/}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    value="${value#\"}"
+    value="${value%\"}"
+    value="${value#\'}"
+    value="${value%\'}"
+
+    [[ -n "$value" ]] || return 1
+    printf '%s\n' "$value"
+}
+
 # Load QB_STYLE from .env.qbittorrent (bare|color|emoji). Default: color.
 # File wins when set; otherwise keep current value (allows QB_STYLE=bare qb status).
 _qb_refresh_style() {
-    local configured=""
-    local line=""
+    local configured
 
-    if [[ -f "$QB_API_KEY_FILE" ]]; then
-        line="$(
-            grep -E '^[[:space:]]*QB_STYLE[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
-                tail -n 1
-        )"
-        configured="${line#*=}"
-        configured="${configured//$'\r'/}"
-        configured="${configured//$'\n'/}"
-        # trim spaces
-        configured="${configured#"${configured%%[![:space:]]*}"}"
-        configured="${configured%"${configured##*[![:space:]]}"}"
-        configured="${configured#\"}"
-        configured="${configured%\"}"
-        configured="${configured#\'}"
-        configured="${configured%\'}"
-        configured="${configured:l}"
-    fi
+    configured="$(_qb_env_get QB_STYLE)"
+    configured="${configured:l}"
 
     if [[ -z "$configured" ]]; then
         [[ -n "$QB_STYLE" ]] || QB_STYLE="$QB_STYLE_DEFAULT"
@@ -378,43 +391,14 @@ _qb_wait_for_webui() {
 }
 
 _qb_api_key() {
-    local key
-
-    [[ -f "$QB_API_KEY_FILE" ]] || return 1
-
-    key="$(
-        grep -E '^QBIT_API_KEY=' "$QB_API_KEY_FILE" 2>/dev/null |
-            tail -n 1 |
-            sed 's/^QBIT_API_KEY=//'
-    )"
-    key="${key//$'\r'/}"
-    key="${key//$'\n'/}"
-    key="${key#\"}"
-    key="${key%\"}"
-    key="${key#\'}"
-    key="${key%\'}"
-
-    [[ -n "$key" ]] || return 1
-    printf '%s\n' "$key"
+    _qb_env_get QBIT_API_KEY
 }
 
 # Load QB_DOWNLOADS from .env.qbittorrent (optional) and export for compose.
 _qb_refresh_downloads() {
-    local configured=""
+    local configured
 
-    if [[ -f "$QB_API_KEY_FILE" ]]; then
-        configured="$(
-            grep -E '^QB_DOWNLOADS=' "$QB_API_KEY_FILE" 2>/dev/null |
-                tail -n 1 |
-                sed 's/^QB_DOWNLOADS=//'
-        )"
-        configured="${configured//$'\r'/}"
-        configured="${configured//$'\n'/}"
-        configured="${configured#\"}"
-        configured="${configured%\"}"
-        configured="${configured#\'}"
-        configured="${configured%\'}"
-    fi
+    configured="$(_qb_env_get QB_DOWNLOADS)"
 
     if [[ -z "$configured" ]]; then
         QB_DOWNLOADS="$QB_DOWNLOADS_DEFAULT"
@@ -438,24 +422,9 @@ _qb_refresh_downloads() {
 # for both the container's WEBUI_PORT and the host publish.
 # File wins when set; otherwise keep current value (allows QB_WEBUI_PORT=9000 qb start).
 _qb_refresh_webui_port() {
-    local configured=""
-    local line=""
+    local configured
 
-    if [[ -f "$QB_API_KEY_FILE" ]]; then
-        line="$(
-            grep -E '^[[:space:]]*QB_WEBUI_PORT[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
-                tail -n 1
-        )"
-        configured="${line#*=}"
-        configured="${configured//$'\r'/}"
-        configured="${configured//$'\n'/}"
-        configured="${configured#"${configured%%[![:space:]]*}"}"
-        configured="${configured%"${configured##*[![:space:]]}"}"
-        configured="${configured#\"}"
-        configured="${configured%\"}"
-        configured="${configured#\'}"
-        configured="${configured%\'}"
-    fi
+    configured="$(_qb_env_get QB_WEBUI_PORT)"
 
     if [[ -n "$configured" ]]; then
         QB_WEBUI_PORT="$configured"
@@ -473,27 +442,12 @@ _qb_refresh_webui_port() {
 # localhost → 127.0.0.1:PORT:PORT ; lan → 0.0.0.0:PORT:PORT (PORT = QB_WEBUI_PORT)
 # Refreshes the port first, so every caller gets a consistent port, URL and publish.
 _qb_refresh_webui_bind() {
-    local configured=""
-    local line=""
+    local configured
 
     _qb_refresh_webui_port
 
-    if [[ -f "$QB_API_KEY_FILE" ]]; then
-        line="$(
-            grep -E '^[[:space:]]*QB_WEBUI_BIND[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
-                tail -n 1
-        )"
-        configured="${line#*=}"
-        configured="${configured//$'\r'/}"
-        configured="${configured//$'\n'/}"
-        configured="${configured#"${configured%%[![:space:]]*}"}"
-        configured="${configured%"${configured##*[![:space:]]}"}"
-        configured="${configured#\"}"
-        configured="${configured%\"}"
-        configured="${configured#\'}"
-        configured="${configured%\'}"
-        configured="${configured:l}"
-    fi
+    configured="$(_qb_env_get QB_WEBUI_BIND)"
+    configured="${configured:l}"
 
     if [[ -z "$configured" ]]; then
         [[ -n "$QB_WEBUI_BIND" ]] || QB_WEBUI_BIND="$QB_WEBUI_BIND_DEFAULT"
@@ -526,25 +480,10 @@ _qb_refresh_webui_bind() {
 # stop = also stop Docker Desktop when no other containers (default)
 # keep = leave Docker Desktop running after qb quit
 _qb_refresh_quit_docker() {
-    local configured=""
-    local line=""
+    local configured
 
-    if [[ -f "$QB_API_KEY_FILE" ]]; then
-        line="$(
-            grep -E '^[[:space:]]*QB_QUIT_DOCKER[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
-                tail -n 1
-        )"
-        configured="${line#*=}"
-        configured="${configured//$'\r'/}"
-        configured="${configured//$'\n'/}"
-        configured="${configured#"${configured%%[![:space:]]*}"}"
-        configured="${configured%"${configured##*[![:space:]]}"}"
-        configured="${configured#\"}"
-        configured="${configured%\"}"
-        configured="${configured#\'}"
-        configured="${configured%\'}"
-        configured="${configured:l}"
-    fi
+    configured="$(_qb_env_get QB_QUIT_DOCKER)"
+    configured="${configured:l}"
 
     if [[ -z "$configured" ]]; then
         [[ -n "$QB_QUIT_DOCKER" ]] || QB_QUIT_DOCKER="$QB_QUIT_DOCKER_DEFAULT"
@@ -569,25 +508,10 @@ _qb_refresh_quit_docker() {
 # app = open/focus Dock Web App after start (default)
 # cli = leave Dock app alone; print WebUI URL
 _qb_refresh_start_ui() {
-    local configured=""
-    local line=""
+    local configured
 
-    if [[ -f "$QB_API_KEY_FILE" ]]; then
-        line="$(
-            grep -E '^[[:space:]]*QB_START_UI[[:space:]]*=' "$QB_API_KEY_FILE" 2>/dev/null |
-                tail -n 1
-        )"
-        configured="${line#*=}"
-        configured="${configured//$'\r'/}"
-        configured="${configured//$'\n'/}"
-        configured="${configured#"${configured%%[![:space:]]*}"}"
-        configured="${configured%"${configured##*[![:space:]]}"}"
-        configured="${configured#\"}"
-        configured="${configured%\"}"
-        configured="${configured#\'}"
-        configured="${configured%\'}"
-        configured="${configured:l}"
-    fi
+    configured="$(_qb_env_get QB_START_UI)"
+    configured="${configured:l}"
 
     if [[ -z "$configured" ]]; then
         [[ -n "$QB_START_UI" ]] || QB_START_UI="$QB_START_UI_DEFAULT"
