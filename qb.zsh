@@ -3140,17 +3140,21 @@ _qb_doctor() {
         issues=1
     fi
 
-    if _qb_container_exists; then
+    # Without the Docker engine, existence cannot be checked: report unknown
+    # instead of a false "missing".
+    if ! _qb_docker_running; then
+        _qb_line off "Container: unknown (Docker stopped)"
+    elif _qb_container_exists; then
         _qb_line ok "Container: $(_qb_state exists)"
+
+        if _qb_container_running; then
+            _qb_line ok "Container: $(_qb_state running)"
+        else
+            _qb_line off "Container: $(_qb_state stopped)"
+        fi
     else
         _qb_line fail "Container: $(_qb_state missing)"
         issues=1
-    fi
-
-    if _qb_container_running; then
-        _qb_line ok "Container: $(_qb_state running)"
-    else
-        _qb_line off "Container: $(_qb_state stopped)"
     fi
 
     if _qb_container_running; then
