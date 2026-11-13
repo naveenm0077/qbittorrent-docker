@@ -1006,9 +1006,10 @@ _qb_open_app() {
 }
 
 # Present WebUI per QB_START_UI: open Dock app (app) or print URL only (cli).
+# Uses QB_START_UI as already set: qb() loads it from .env.qbittorrent and
+# `qb start --cli/--app` may override it. Re-reading the file here would
+# undo that override.
 _qb_present_webui() {
-    _qb_refresh_start_ui
-
     if [[ "$QB_START_UI" == "cli" ]]; then
         _qb_line info "Skipping Dock Web App (QB_START_UI=cli)"
         _qb_line info "WebUI: $QB_URL"

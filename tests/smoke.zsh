@@ -269,6 +269,21 @@ else
     fail "qb repair stops before compose when the port is taken" "$out"
 fi
 
+# qb start --cli / --app win over QB_START_UI in .env.qbittorrent.
+start_ui_run() {
+    print -r -- "QB_START_UI=$1" > "$ENV_FILE"
+    qbrun "
+        _qb_docker_running() { return 0; }; _qb_container_running() { return 0; }
+        _qb_downloads_mount_matches() { return 0; }; _qb_webui_publish_matches() { return 0; }
+        _qb_webui_ready() { return 0; }; _qb_image_age_notice() { :; }
+        _qb_open_app() { print OPENED-APP; }
+        qb start $2 | grep -qE OPENED-APP && print app || print cli
+    "
+}
+expect_eq "qb start --cli beats QB_START_UI=app" "cli" "$(start_ui_run app --cli)"
+expect_eq "qb start --app beats QB_START_UI=cli" "app" "$(start_ui_run cli --app)"
+expect_eq "qb start without a flag follows QB_START_UI=cli" "cli" "$(start_ui_run cli '')"
+
 # doctor with Docker stopped: container unknown, port owner shown.
 : > "$ENV_FILE"
 out="$(qbrun '
