@@ -326,3 +326,7 @@ git config core.hooksPath .githooks
 | 6881 | TCP/UDP | BitTorrent peer connections |
 
 The WebUI is intended for local use. Default publish is `127.0.0.1` only. Set `QB_WEBUI_BIND=lan` if you knowingly want LAN access, and keep a strong WebUI password / API key.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
